@@ -1,0 +1,45 @@
+# Supabase CLI project config for MicroManus.
+# `supabase link --project-ref <ref>` + `supabase db push` applies
+# supabase/migrations/*.sql to the provisioned project (Plan 01-02).
+# The `project_id` below is a local label, not the remote project ref.
+
+project_id = "micromanus"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# Match the provisioned project's Postgres major version (Supabase current line).
+major_version = 17
+
+[db.migrations]
+enabled = true
+
+[auth]
+enabled = true
+# Site URL and additional redirect URLs are configured in the Supabase dashboard
+# (Plan 01-02 human gate), targeting the deployed *.vercel.app domain (D-09).
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/**"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.external.github]
+enabled = true
+client_id = ""
+secret = ""
+
+[auth.external.google]
+enabled = true
+client_id = ""
+secret = ""
+
+[studio]
+enabled = true
+port = 54323
