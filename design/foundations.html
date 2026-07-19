@@ -1,0 +1,82 @@
+<!-- @dsCard group="Foundations" -->
+<!-- MicroManus — Design foundations: warm & approachable, light-first -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MicroManus — Foundations</title>
+<style>
+  :root{
+    --bg:#FBF9F6; --surface:#FFFFFF; --surface-2:#F4F1EC; --surface-3:#EFEBE3;
+    --border:#E9E4DB; --border-strong:#DDD6CA;
+    --text:#211D18; --text-2:#6C6459; --text-3:#9C9385;
+    --accent:#C2410C; --accent-hover:#9A3210; --accent-soft:#FBEAE0;
+    --success:#3B7A4B; --error:#B4302A; --warning:#C77D0E;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);color:var(--text);background:var(--bg);padding:40px;-webkit-font-smoothing:antialiased}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-3);margin:40px 0 16px;font-weight:600}
+  h2:first-child{margin-top:0}
+  .head{margin-bottom:8px}
+  .head h1{font-size:26px;letter-spacing:-.02em;margin:0 0 6px}
+  .head p{margin:0;color:var(--text-2);font-size:14px}
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  .sw{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
+  .sw .chip{height:64px}
+  .sw .meta{padding:9px 11px}
+  .sw .nm{font-size:12.5px;font-weight:600}
+  .sw .hex{font-family:var(--mono);font-size:11px;color:var(--text-3);margin-top:2px}
+  .type-row{display:flex;align-items:baseline;gap:16px;padding:12px 0;border-bottom:1px solid var(--border)}
+  .type-row .tag{font-family:var(--mono);font-size:11px;color:var(--text-3);width:120px;flex:0 0 auto}
+  .d1{font-size:26px;font-weight:650;letter-spacing:-.02em}
+  .h{font-size:19px;font-weight:600;letter-spacing:-.01em}
+  .body{font-size:14.5px}
+  .small{font-size:12.5px;color:var(--text-2)}
+  .num{font-family:var(--mono);font-size:14px}
+  .radii{display:flex;gap:16px;flex-wrap:wrap}
+  .rr{width:88px;text-align:center}
+  .rr .box{height:64px;background:var(--accent-soft);border:1px solid #F1D3C4}
+  .rr .lbl{font-family:var(--mono);font-size:11px;color:var(--text-3);margin-top:6px}
+</style>
+
+<div class="head">
+  <h1>MicroManus — Foundations</h1>
+  <p>Warm &amp; approachable, light-first. Cream paper base, warm neutrals, one confident terracotta accent. Monospace reserved for money &amp; tokens.</p>
+</div>
+
+<h2>Surfaces &amp; neutrals</h2>
+<div class="swatches">
+  <div class="sw"><div class="chip" style="background:#FBF9F6"></div><div class="meta"><div class="nm">bg / paper</div><div class="hex">#FBF9F6</div></div></div>
+  <div class="sw"><div class="chip" style="background:#FFFFFF;border-bottom:1px solid var(--border)"></div><div class="meta"><div class="nm">surface</div><div class="hex">#FFFFFF</div></div></div>
+  <div class="sw"><div class="chip" style="background:#F4F1EC"></div><div class="meta"><div class="nm">surface-2</div><div class="hex">#F4F1EC</div></div></div>
+  <div class="sw"><div class="chip" style="background:#E9E4DB"></div><div class="meta"><div class="nm">border</div><div class="hex">#E9E4DB</div></div></div>
+  <div class="sw"><div class="chip" style="background:#211D18"></div><div class="meta"><div class="nm">text</div><div class="hex">#211D18</div></div></div>
+  <div class="sw"><div class="chip" style="background:#6C6459"></div><div class="meta"><div class="nm">text-2</div><div class="hex">#6C6459</div></div></div>
+  <div class="sw"><div class="chip" style="background:#9C9385"></div><div class="meta"><div class="nm">text-3</div><div class="hex">#9C9385</div></div></div>
+</div>
+
+<h2>Accent &amp; semantic</h2>
+<div class="swatches">
+  <div class="sw"><div class="chip" style="background:#C2410C"></div><div class="meta"><div class="nm">accent (terracotta)</div><div class="hex">#C2410C</div></div></div>
+  <div class="sw"><div class="chip" style="background:#9A3210"></div><div class="meta"><div class="nm">accent-hover</div><div class="hex">#9A3210</div></div></div>
+  <div class="sw"><div class="chip" style="background:#FBEAE0"></div><div class="meta"><div class="nm">accent-soft</div><div class="hex">#FBEAE0</div></div></div>
+  <div class="sw"><div class="chip" style="background:#3B7A4B"></div><div class="meta"><div class="nm">success</div><div class="hex">#3B7A4B</div></div></div>
+  <div class="sw"><div class="chip" style="background:#B4302A"></div><div class="meta"><div class="nm">error</div><div class="hex">#B4302A</div></div></div>
+  <div class="sw"><div class="chip" style="background:#C77D0E"></div><div class="meta"><div class="nm">warning</div><div class="hex">#C77D0E</div></div></div>
+</div>
+
+<h2>Type scale — Inter (system fallback)</h2>
+<div class="type-row"><span class="tag">display / 26</span><span class="d1">Research that shows its work</span></div>
+<div class="type-row"><span class="tag">heading / 19</span><span class="h">Your research workspace</span></div>
+<div class="type-row"><span class="tag">body / 14.5</span><span class="body">Streaming answers, cited web research, and downloadable PDF reports.</span></div>
+<div class="type-row"><span class="tag">small / 12.5</span><span class="small">1 credit = 1 research run · BYOK</span></div>
+<div class="type-row"><span class="tag">mono / 14</span><span class="num">$0.0428 · 12,430 tok · cache −$0.31</span></div>
+
+<h2>Radius</h2>
+<div class="radii">
+  <div class="rr"><div class="box" style="border-radius:8px"></div><div class="lbl">sm · 8px</div></div>
+  <div class="rr"><div class="box" style="border-radius:12px"></div><div class="lbl">base · 12px</div></div>
+  <div class="rr"><div class="box" style="border-radius:18px"></div><div class="lbl">lg · 18px</div></div>
+  <div class="rr"><div class="box" style="border-radius:999px"></div><div class="lbl">pill</div></div>
+</div>

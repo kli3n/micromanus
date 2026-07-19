@@ -1,0 +1,104 @@
+<!-- @dsCard group="Components" -->
+<!-- MicroManus — Core components used across Phase 1 screens -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MicroManus — Components</title>
+<style>
+  :root{
+    --bg:#FBF9F6; --surface:#FFFFFF; --surface-2:#F4F1EC; --surface-3:#EFEBE3;
+    --border:#E9E4DB; --border-strong:#DDD6CA;
+    --text:#211D18; --text-2:#6C6459; --text-3:#9C9385;
+    --accent:#C2410C; --accent-hover:#9A3210; --accent-soft:#FBEAE0;
+    --success:#3B7A4B; --error:#B4302A; --error-soft:#FCEDEA; --error-border:#F1C9C2;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:12px; --radius-sm:8px;
+    --shadow:0 4px 16px rgba(60,45,30,.08);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);color:var(--text);background:var(--bg);padding:40px;-webkit-font-smoothing:antialiased}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-3);margin:32px 0 14px;font-weight:600}
+  h2:first-child{margin-top:0}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .stack{display:flex;flex-direction:column;gap:12px;max-width:360px}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;height:44px;padding:0 18px;
+    border-radius:var(--radius);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;
+    border:1px solid transparent;transition:background .15s,border-color .15s,transform .04s}
+  .btn:active{transform:translateY(1px)}
+  .btn svg{width:17px;height:17px}
+  .primary{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 8px rgba(194,65,12,.22)}
+  .primary:hover{background:var(--accent-hover)}
+  .secondary{background:var(--surface);color:var(--text);border-color:var(--border-strong)}
+  .secondary:hover{background:var(--surface-2)}
+  .ghost{background:transparent;color:var(--text-2)}
+  .ghost:hover{background:var(--surface-2);color:var(--text)}
+  .oauth{width:100%;background:var(--surface);color:var(--text);border-color:var(--border-strong);font-weight:550;height:46px}
+  .oauth:hover{background:var(--surface-2)}
+  .oauth svg{width:18px;height:18px}
+
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .input{display:flex;align-items:center;gap:8px;height:44px;padding:0 13px;border-radius:var(--radius);
+    border:1px solid var(--border-strong);background:var(--surface)}
+  .input input{border:0;outline:0;background:transparent;font-family:var(--mono);font-size:13.5px;color:var(--text);width:100%}
+  .input .last4{font-family:var(--mono);font-size:12.5px;color:var(--text-3)}
+
+  .badge{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:999px;
+    font-size:12.5px;font-weight:600;font-family:var(--mono)}
+  .badge.credit{background:var(--accent-soft);color:var(--accent);border:1px solid #F1D3C4}
+  .badge.ok{background:#E8F1EA;color:var(--success);border:1px solid #CBE2D2}
+  .badge.soon{background:var(--surface-3);color:var(--text-3);border:1px solid var(--border);font-family:var(--sans);font-weight:600}
+  .dotpulse{width:7px;height:7px;border-radius:50%;background:currentColor}
+
+  .banner{display:flex;gap:11px;align-items:flex-start;border-radius:var(--radius);padding:13px 14px;max-width:420px}
+  .banner svg{width:18px;height:18px;flex:0 0 auto;margin-top:1px}
+  .banner strong{display:block;font-size:13.5px;font-weight:650;margin-bottom:2px}
+  .banner span{font-size:13px;color:var(--text-2);line-height:1.5}
+  .banner.error{background:var(--error-soft);border:1px solid var(--error-border)}
+  .banner.error svg,.banner.error strong{color:var(--error)}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px;max-width:300px}
+  .card .t{font-size:14px;font-weight:600;margin-bottom:4px}
+  .card .d{font-size:12.5px;color:var(--text-2);line-height:1.5}
+</style>
+
+<h2>Buttons</h2>
+<div class="row">
+  <button class="btn primary">Primary action</button>
+  <button class="btn secondary">Secondary</button>
+  <button class="btn ghost">Ghost</button>
+</div>
+
+<h2>OAuth buttons</h2>
+<div class="stack">
+  <button class="btn oauth"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.6 5.6.6 11.9c0 5 3.3 9.3 7.8 10.8.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.4 11.4 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.5-1.5 7.8-5.8 7.8-10.8C23.4 5.6 18.3.5 12 .5Z"/></svg>Continue with GitHub</button>
+  <button class="btn oauth"><svg viewBox="0 0 24 24"><path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.4-1.6 4.1-5.5 4.1-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.1.8 3.9 1.5l2.6-2.5C17.3 3.4 14.9 2.4 12 2.4 6.9 2.4 2.8 6.5 2.8 11.6S6.9 20.8 12 20.8c5.3 0 8.8-3.7 8.8-8.9 0-.6-.1-1.1-.2-1.6H12Z"/><path fill="#34A853" d="M12 20.8c2.4 0 4.5-.8 5.9-2.2l-2.8-2.2c-.8.5-1.8.9-3.1.9-2.4 0-4.4-1.6-5.2-3.8l-2.9 2.2C5.2 18.8 8.3 20.8 12 20.8Z"/><path fill="#4A90D9" d="M20.8 11.9c0-.6-.1-1.1-.2-1.6H12v3.9h5.5c-.3 1.2-1 2.1-1.9 2.7l2.8 2.2c1.6-1.5 2.6-3.8 2.6-7.2Z"/><path fill="#FBBC05" d="M6.8 13.5A5.5 5.5 0 0 1 6.5 12c0-.5.1-1 .3-1.5L3.9 8.3A9.2 9.2 0 0 0 2.8 12c0 1.4.3 2.6.9 3.7l3.1-2.2Z"/></svg>Continue with Google</button>
+</div>
+
+<h2>Field — API key (last-4 display, Phase 2)</h2>
+<div class="stack">
+  <div class="field">
+    <label>OpenAI API key</label>
+    <div class="input"><input value="sk-··················" readonly><span class="last4">last 4: 8f2a</span></div>
+  </div>
+</div>
+
+<h2>Badges</h2>
+<div class="row">
+  <span class="badge credit"><span class="dotpulse"></span>5 credits</span>
+  <span class="badge ok">key verified</span>
+  <span class="badge soon">Soon</span>
+</div>
+
+<h2>Inline banner (failure states)</h2>
+<div class="banner error" role="alert">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg>
+  <div><strong>Sign-in couldn’t be completed</strong><span>The authorization was cancelled. No account was created — just try again.</span></div>
+</div>
+
+<h2>Empty-state card</h2>
+<div class="card">
+  <div class="t">No chats yet</div>
+  <div class="d">Your research history will appear here once you start your first run.</div>
+</div>

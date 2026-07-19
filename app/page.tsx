@@ -1,14 +1,39 @@
+import { redirect } from "next/navigation";
 import { OAuthButtons } from "@/components/OAuthButtons";
+import { createClient } from "@/lib/supabase/server";
 
-// The landing page is the ONLY public route. It renders the wordmark, tagline,
-// GitHub + Google OAuth buttons, and — when the callback returns ?error (D-07) —
-// a human-readable inline error banner with the buttons still present.
+// The landing page is the ONLY public route (served at `/`). It renders the
+// wordmark, tagline, GitHub + Google OAuth buttons, and — when the callback
+// returns ?error (D-07) — a human-readable inline error banner with the buttons
+// still present.
+//
+// ROUTING NOTE: the session-guarded workspace shell lives at the `/app` segment
+// (two pages cannot both resolve to `/` in Next.js — the public landing owns
+// `/`). So an already-authenticated visitor to `/` is forwarded to the shell,
+// which keeps the OAuth flow's `next=/` working (login → `/` → `/app`) and
+// avoids showing sign-in buttons to a signed-in user.
 export default async function Landing({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
+
+  // Forward signed-in users to the guarded shell. getClaims() (getUser fallback)
+  // is the server-trust check; never getSession().
+  const supabase = await createClient();
+  const supabaseAuth = supabase.auth as typeof supabase.auth & {
+    getClaims?: () => Promise<{ data: { claims?: { sub?: string } } | null }>;
+  };
+  let signedIn = false;
+  if (typeof supabaseAuth.getClaims === "function") {
+    const { data } = await supabaseAuth.getClaims();
+    signedIn = Boolean(data?.claims?.sub);
+  } else {
+    const { data } = await supabase.auth.getUser();
+    signedIn = Boolean(data.user);
+  }
+  if (signedIn) redirect("/app");
 
   return (
     <main

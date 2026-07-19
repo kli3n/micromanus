@@ -1,0 +1,158 @@
+<!-- @dsCard group="Screens" -->
+<!--
+  MicroManus — Post-login app shell (Phase 1)
+  Decision refs: D-02 (stub of real chat layout), D-03 (sign-out on every page),
+  D-12 (visible "Generate test PDF" -> /api/render-pdf smoke test).
+  Chat/model-selector are non-functional placeholders in Phase 1 (arrive Phase 2).
+-->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MicroManus — Workspace</title>
+<style>
+  :root{
+    --bg:#FBF9F6; --surface:#FFFFFF; --surface-2:#F4F1EC; --surface-3:#EFEBE3;
+    --border:#E9E4DB; --border-strong:#DDD6CA;
+    --text:#211D18; --text-2:#6C6459; --text-3:#9C9385;
+    --accent:#C2410C; --accent-hover:#9A3210; --accent-soft:#FBEAE0;
+    --success:#3B7A4B;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:12px; --radius-sm:8px;
+    --shadow-sm:0 1px 2px rgba(60,45,30,.06);
+    --shadow:0 6px 22px rgba(60,45,30,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:var(--sans);color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:264px 1fr;height:100vh}
+
+  /* ---- Sidebar ---- */
+  .side{background:var(--surface-2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:14px 12px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px}
+  .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),#E0742E);
+    display:grid;place-items:center;color:#fff;box-shadow:0 3px 9px rgba(194,65,12,.28)}
+  .mark svg{width:17px;height:17px}
+  .wordmark{font-size:15.5px;font-weight:650;letter-spacing:-.02em}
+  .newchat{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border-radius:var(--radius);
+    border:1px dashed var(--border-strong);background:transparent;color:var(--text-2);font-family:inherit;font-size:13.5px;
+    font-weight:550;cursor:not-allowed;opacity:.85}
+  .newchat svg{width:16px;height:16px}
+  .newchat .soon{margin-left:auto;font-size:10px;font-weight:600;color:var(--text-3);
+    background:var(--surface-3);padding:2px 6px;border-radius:20px;letter-spacing:.02em}
+  .side-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);padding:20px 10px 8px}
+  .empty-list{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;color:var(--text-3);gap:8px;padding:0 16px}
+  .empty-list svg{width:26px;height:26px;opacity:.5}
+  .empty-list p{margin:0;font-size:12.5px;line-height:1.5}
+  .user{display:flex;align-items:center;gap:10px;padding:10px;border-top:1px solid var(--border);margin-top:8px}
+  .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,#8B6D4E,#B08B62);
+    color:#fff;display:grid;place-items:center;font-size:13px;font-weight:650;flex:0 0 auto}
+  .user-meta{min-width:0;flex:1}
+  .user-meta .name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .user-meta .email{font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .signout{width:32px;height:32px;border-radius:8px;border:1px solid transparent;background:transparent;
+    color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex:0 0 auto;transition:background .15s,color .15s}
+  .signout:hover{background:var(--surface-3);color:var(--accent)}
+  .signout svg{width:17px;height:17px}
+
+  /* ---- Main ---- */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .topbar{height:60px;border-bottom:1px solid var(--border);background:var(--surface);
+    display:flex;align-items:center;gap:14px;padding:0 22px}
+  .crumb{font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+  .crumb .muted{color:var(--text-3);font-weight:500}
+  .spacer{flex:1}
+  .model{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:var(--radius-sm);
+    border:1px solid var(--border);background:var(--surface-2);color:var(--text-3);font-size:13px;font-weight:550;cursor:not-allowed}
+  .model svg{width:15px;height:15px}
+  .model .soon{font-size:10px;font-weight:600;color:var(--text-3);background:var(--surface-3);padding:2px 6px;border-radius:20px}
+  .btn-primary{display:flex;align-items:center;gap:8px;height:36px;padding:0 15px;border-radius:var(--radius-sm);
+    border:1px solid var(--accent);background:var(--accent);color:#fff;font-family:inherit;font-size:13.5px;
+    font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(194,65,12,.22);transition:background .15s,transform .04s}
+  .btn-primary:hover{background:var(--accent-hover)}
+  .btn-primary:active{transform:translateY(1px)}
+  .btn-primary svg{width:16px;height:16px}
+
+  .canvas{flex:1;display:grid;place-items:center;padding:40px;
+    background:radial-gradient(720px 380px at 50% 30%, #FDF4EE 0%, rgba(253,244,238,0) 70%)}
+  .hero{max-width:460px;text-align:center}
+  .hero .glyph{width:64px;height:64px;border-radius:18px;margin:0 auto 22px;background:var(--surface);
+    border:1px solid var(--border);box-shadow:var(--shadow);display:grid;place-items:center;color:var(--accent)}
+  .hero .glyph svg{width:30px;height:30px}
+  .hero h1{font-size:24px;letter-spacing:-.02em;margin:0 0 10px}
+  .hero p{font-size:14.5px;line-height:1.6;color:var(--text-2);margin:0 0 24px}
+  .cta-row{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .pdf-note{font-size:12px;color:var(--text-3);display:flex;align-items:center;gap:6px}
+  .pdf-note svg{width:13px;height:13px;color:var(--success)}
+  .btn-lg{height:44px;padding:0 20px;font-size:14px}
+</style>
+
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="side">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span>
+      <span class="wordmark">MicroManus</span>
+    </div>
+
+    <button class="newchat" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
+      New research chat
+      <span class="soon">Soon</span>
+    </button>
+
+    <div class="side-label">Chats</div>
+    <div class="empty-list">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+      <p>No chats yet.<br>Your research history will live here.</p>
+    </div>
+
+    <div class="user">
+      <span class="avatar">SK</span>
+      <div class="user-meta">
+        <div class="name">Siddarth K.</div>
+        <div class="email">reviewer@drdroid.io</div>
+      </div>
+      <button class="signout" title="Sign out" aria-label="Sign out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <section class="main">
+    <header class="topbar">
+      <div class="crumb">Workspace <span class="muted">/ Getting started</span></div>
+      <div class="spacer"></div>
+      <div class="model" title="Model selection arrives in the next update">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3Z"></path></svg>
+        Model
+        <span class="soon">Soon</span>
+      </div>
+      <button class="btn-primary" title="Renders a hello-world PDF via /api/render-pdf">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M9 15h6"></path><path d="M9 18h6"></path></svg>
+        Generate test PDF
+      </button>
+    </header>
+
+    <div class="canvas">
+      <div class="hero">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        </div>
+        <h1>You’re in. This is your research workspace.</h1>
+        <p>Streaming answers, cited web research, and downloadable PDF reports arrive in the next update. For now, confirm the serverless PDF pipeline works end-to-end.</p>
+        <div class="cta-row">
+          <button class="btn-primary btn-lg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+            Generate test PDF
+          </button>
+          <span class="pdf-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+            Verifies Chromium rendering on Vercel
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
