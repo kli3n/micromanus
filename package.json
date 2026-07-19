@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "test:rls": "node scripts/rls-probe.ts",
-    "test:money": "node scripts/debit-concurrency.ts"
+    "test:money": "node scripts/debit-concurrency.ts",
+    "test:guard": "node scripts/auth-guard.test.ts"
   },
   "dependencies": {
     "@sparticuz/chromium": "149.0.0",
