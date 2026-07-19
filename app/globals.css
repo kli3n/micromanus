@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* MicroManus design foundations — warm & approachable, light-first.
+   Ported verbatim from design/foundations.html (D-11: mockups are the design contract). */
+:root {
+  /* Surfaces & neutrals */
+  --bg: #fbf9f6;
+  --surface: #ffffff;
+  --surface-2: #f4f1ec;
+  --surface-3: #efebe3;
+  --border: #e9e4db;
+  --border-strong: #ddd6ca;
+  --text: #211d18;
+  --text-2: #6c6459;
+  --text-3: #9c9385;
+
+  /* Accent & semantic */
+  --accent: #c2410c;
+  --accent-hover: #9a3210;
+  --accent-soft: #fbeae0;
+  --success: #3b7a4b;
+  --error: #b4302a;
+  --error-soft: #fcedea;
+  --error-border: #f1c9c2;
+  --warning: #c77d0e;
+
+  /* Radius */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 18px;
+
+  /* Elevation */
+  --shadow: 0 4px 16px rgba(60, 45, 30, 0.08);
+  --shadow-lg: 0 18px 50px rgba(60, 45, 30, 0.13);
+
+  /* Type */
+  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}

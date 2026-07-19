@@ -1,4 +1,30 @@
-.planning/
+# dependencies
 node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# testing
+/coverage
+
+# env files — no secrets in repo; keep only the example
 .env*
+!.env.example
+
+# planning + agent config (private, never pushed)
+.planning/
 .claude/
+
+# vercel
+.vercel
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
