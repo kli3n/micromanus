@@ -30,15 +30,14 @@ additional_redirect_urls = ["http://localhost:3000/**"]
 jwt_expiry = 3600
 enable_signup = true
 
+# OAuth providers are configured in the Supabase DASHBOARD (Plan 01-02), not via the CLI.
+# Disabled here so `supabase db push` / config validation doesn't require client_id/secret.
+# These blocks only affect local `supabase start`, never the hosted project's dashboard settings.
 [auth.external.github]
-enabled = true
-client_id = ""
-secret = ""
+enabled = false
 
 [auth.external.google]
-enabled = true
-client_id = ""
-secret = ""
+enabled = false
 
 [studio]
 enabled = true
