@@ -24,6 +24,11 @@ next-env.d.ts
 # vercel
 .vercel
 
+# supabase (CLI local state — created by `supabase link` / `db push` in Gate B)
+supabase/.temp
+supabase/.branches
+supabase/.env
+
 # misc
 .DS_Store
 *.pem
