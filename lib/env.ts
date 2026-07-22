@@ -41,4 +41,15 @@ export function parseEnv(
  */
 export const env: Env = process.env.VITEST
   ? (undefined as unknown as Env)
-  : parseEnv(process.env);
+  : parseEnv({
+      // Access each var as a LITERAL `process.env.X` so Next.js inlines the
+      // NEXT_PUBLIC_* values into the CLIENT bundle at build time. Passing bare
+      // `process.env` (or reading it indirectly via a `source[key]` variable) is
+      // NOT statically replaced by the bundler, so those keys are `undefined` in
+      // the browser — which is what threw the client-side ZodError. Non-public
+      // vars are never inlined client-side (resolve to undefined) and are optional.
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
+    });
