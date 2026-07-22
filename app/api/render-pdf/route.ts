@@ -64,10 +64,14 @@ export async function POST() {
         "Content-Disposition": 'inline; filename="smoke.pdf"',
       },
     });
-  } catch {
+  } catch (err) {
     // Degrade instead of throwing (decision ⑨). 200 so the client reads the
     // JSON body cleanly and shows "PDF unavailable — try again".
-    return new Response(JSON.stringify({ error: "pdf_unavailable" }), {
+    // TEMP DEBUG: surface the real Chromium failure so the deployed cause is
+    // visible (launch errors contain no secrets). Remove once the PDF renders.
+    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error("[render-pdf] failed:", err);
+    return new Response(JSON.stringify({ error: "pdf_unavailable", detail }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
