@@ -18,8 +18,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 function requireEnv(...names: string[]): string {
   for (const n of names) {
-    const v = process.env[n];
-    if (v && v.length > 0) return v;
+    const raw = process.env[n];
+    if (raw == null) continue;
+    // Sanitize: trim whitespace/CR and strip surrounding quotes that a
+    // `vercel env pull` + Node --env-file value can carry (common Windows papercut).
+    const v = raw.trim().replace(/^(['"])([\s\S]*)\1$/, '$2').trim();
+    if (v.length > 0) return v;
   }
   throw new Error(
     `Missing required env var (one of: ${names.join(', ')}). ` +
