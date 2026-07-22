@@ -66,12 +66,10 @@ export async function POST() {
     });
   } catch (err) {
     // Degrade instead of throwing (decision ⑨). 200 so the client reads the
-    // JSON body cleanly and shows "PDF unavailable — try again".
-    // TEMP DEBUG: surface the real Chromium failure so the deployed cause is
-    // visible (launch errors contain no secrets). Remove once the PDF renders.
-    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    console.error("[render-pdf] failed:", err);
-    return new Response(JSON.stringify({ error: "pdf_unavailable", detail }), {
+    // JSON body cleanly and shows "PDF unavailable — try again". The failure is
+    // logged server-side only (Vercel runtime logs) — never leaked to the client.
+    console.error("[render-pdf] render failed:", err);
+    return new Response(JSON.stringify({ error: "pdf_unavailable" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
