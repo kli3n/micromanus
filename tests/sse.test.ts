@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 // RED (Task 1): these imports are unresolved until Task 2 creates the route
 // module exporting the `createSseSender` + `runTurn` seams. Intended to fail now.
-import { createSseSender, runTurn } from "@/app/api/agent/run/route";
+import { createSseSender, runTurn, type ModelChunk } from "@/app/api/agent/run/route";
+import type { NormalizedUsage } from "@/lib/agent/adapter";
 
 const dec = new TextDecoder();
 
@@ -65,12 +66,11 @@ function fakeDb() {
 /** Fake stream Model: yields delta chunks then a usage chunk; can throw. */
 function fakeModel(opts: {
   deltas: string[];
-  usage?: unknown;
+  usage?: NormalizedUsage;
   throwAt?: "before" | "after";
 }) {
   return {
-    // eslint-disable-next-line require-yield
-    async *run() {
+    async *run(): AsyncGenerator<ModelChunk> {
       if (opts.throwAt === "before") {
         throw new Error("PROVIDER_RAW_401_UNAUTHORIZED_BODY");
       }
@@ -87,7 +87,7 @@ function fakeModel(opts: {
   };
 }
 
-const ZERO_USAGE = {
+const ZERO_USAGE: NormalizedUsage = {
   inputTokens: 10,
   outputTokens: 2,
   cacheReadTokens: 0,
