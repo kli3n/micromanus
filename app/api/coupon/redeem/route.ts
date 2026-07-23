@@ -14,11 +14,14 @@ import { createClient } from "@/lib/supabase/server";
  * commit 7e4d0e0).
  *
  * Body: `{ code: string }` (validated with zod, trimmed, 1..64 chars — T-02-06).
- * Returns status 200 for every domain outcome:
- *   { ok: true, credits: number }                         — grant succeeded
- *   { ok: false, error: 'empty' | 'unknown' }             — this task (Task 1)
- * Task 2 refines the error branch to map the RPC SQLSTATE to the specific
- * 'invalid' / 'already_redeemed' / 'auth' outcomes.
+ * Domain outcomes (status 200, except `auth` which is 401):
+ *   { ok: true, credits: number }                — grant succeeded
+ *   { ok: false, error: 'empty' }                — missing/malformed input
+ *   { ok: false, error: 'invalid' }              — P0002 (code unknown/inactive)
+ *   { ok: false, error: 'already_redeemed' }     — P0003 or 23505 (replay)
+ *   { ok: false, error: 'auth' }                 — 28000 (no caller) [401]
+ *   { ok: false, error: 'unknown' }              — any other error
+ * The client maps these keys to fixed copy; PG detail never crosses the wire.
  */
 const bodySchema = z.object({ code: z.string().trim().min(1).max(64) });
 
@@ -45,7 +48,20 @@ export async function POST(req: Request) {
     if (error) {
       // Log the full error server-side only; never return PG detail (T-02-02).
       console.error("[coupon/redeem] failed:", error);
-      return Response.json({ ok: false, error: "unknown" });
+      // Map the RPC SQLSTATE (error.code holds the Postgres SQLSTATE string) to
+      // a fixed copy key. The uniqueness index makes replay schema-impossible,
+      // surfaced as P0003 (or the raw 23505 if not yet re-raised) — T-02-01.
+      switch (error.code) {
+        case "P0002":
+          return Response.json({ ok: false, error: "invalid" });
+        case "P0003":
+        case "23505":
+          return Response.json({ ok: false, error: "already_redeemed" });
+        case "28000":
+          return Response.json({ ok: false, error: "auth" }, { status: 401 });
+        default:
+          return Response.json({ ok: false, error: "unknown" });
+      }
     }
 
     return Response.json({ ok: true, credits: data });

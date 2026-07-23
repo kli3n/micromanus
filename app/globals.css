@@ -60,3 +60,23 @@ body {
   font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Credit-badge pulsing dot (D-21). Compositor-only (opacity), disabled under
+   reduced-motion per design/BROWSER-DESIGN.md. Ported from demos §topbar. */
+@keyframes badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.badge-dot-pulse {
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .badge-dot-pulse {
+    animation: none;
+  }
+}

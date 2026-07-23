@@ -2,50 +2,99 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { BalanceBadge } from "@/components/BalanceBadge";
 
 /**
- * Paywall (PAY-01/PAY-02, D-13/D-16/D-17) — the first step a reviewer meets at
- * `/app` when their credit balance is 0. Rendered by the server balance-gate in
- * `app/app/page.tsx` INSIDE the persistent AppShell chrome (sidebar + topbar
- * stay visible — D-16), never as a separate full-screen route.
+ * Paywall (PAY-01/PAY-02/PAY-03, D-13/D-16/D-17) — the first step a reviewer
+ * meets at `/app` when their credit balance is 0. Rendered by the server
+ * balance-gate in `app/app/page.tsx` INSIDE the persistent AppShell chrome
+ * (sidebar + topbar stay visible — D-16), never as a separate full-screen route.
  *
  * Markup is ported from design/screens/02-phase2-demos.html §01 "Paywall" (D-11:
  * the mockup is the design contract) into Tailwind arbitrary-value utilities that
  * reference the :root tokens in app/globals.css — never raw hex.
  *
- * The coupon form POSTs to /api/coupon/redeem; on success it calls
- * router.refresh() so the server page re-reads the balance and flips the gate to
- * the chat empty-state (D-15). This is the Task 1 thin happy path — Task 2 adds
- * the BalanceBadge, the locked error/success banners, and the empty-input guard.
+ * The coupon form POSTs to /api/coupon/redeem; the route's `error` key is
+ * translated into the locked banners below (UX-01). On success it shows the
+ * locked "5 credits added" banner then calls router.refresh() so the server page
+ * re-reads the balance and flips the gate to the chat empty-state (D-15).
  */
-export function Paywall({ balance: _balance }: { balance: number }) {
+type RedeemError = "empty" | "invalid" | "already_redeemed" | "auth" | "unknown";
+type Banner =
+  | { kind: "error"; title?: string; body: string }
+  | { kind: "success"; title: string; body: string };
+
+/** Locked copy (UI-SPEC Copywriting Contract) for each route error key. */
+function bannerForError(error: RedeemError): Banner {
+  switch (error) {
+    case "invalid":
+      return {
+        kind: "error",
+        title: "Invalid code",
+        body: "That coupon doesn't exist. Check for typos and try again.",
+      };
+    case "already_redeemed":
+      // D-20: no special-casing of the 0-credits + already-redeemed combination.
+      return {
+        kind: "error",
+        title: "Already redeemed",
+        body: "This coupon has already been used on your account. Each coupon grants credits once.",
+      };
+    case "empty":
+      return { kind: "error", body: "Enter your coupon code to redeem credits." };
+    case "auth":
+    case "unknown":
+    default:
+      return {
+        kind: "error",
+        title: "Couldn't redeem coupon",
+        body: "Something went wrong redeeming your coupon. Please try again.",
+      };
+  }
+}
+
+export function Paywall({ balance }: { balance: number }) {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [pending, setPending] = useState(false);
-  const [status, setStatus] = useState<"idle" | "ok" | "failed">("idle");
+  const [banner, setBanner] = useState<Banner | null>(null);
 
   async function redeem() {
+    // Client-side empty-input guard — no network call for a blank code.
+    if (code.trim().length === 0) {
+      setBanner(bannerForError("empty"));
+      return;
+    }
     setPending(true);
-    setStatus("idle");
+    setBanner(null);
     try {
       const res = await fetch("/api/coupon/redeem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
       });
-      const json = (await res.json()) as { ok: boolean };
+      const json = (await res.json()) as
+        | { ok: true; credits: number }
+        | { ok: false; error: RedeemError };
       if (json.ok) {
-        setStatus("ok");
+        setBanner({
+          kind: "success",
+          title: "5 credits added",
+          body: "You're set for 5 research runs. Next: connect your model key.",
+        });
+        // Re-read the balance server-side -> gate flips to the chat empty-state.
         router.refresh();
       } else {
-        setStatus("failed");
+        setBanner(bannerForError(json.error));
       }
     } catch {
-      setStatus("failed");
+      setBanner(bannerForError("unknown"));
     } finally {
       setPending(false);
     }
   }
+
+  const isSuccess = banner?.kind === "success";
 
   return (
     <div className="mx-auto max-w-[620px] px-8 py-10">
@@ -55,27 +104,71 @@ export function Paywall({ balance: _balance }: { balance: number }) {
       <h1 className="mb-2 text-[24px] tracking-[-0.02em] [text-wrap:balance]">
         Add credits to run research
       </h1>
-      <p className="mb-6 text-[14.5px] leading-[1.6] text-[var(--text-2)]">
+      <p className="mb-4 text-[14.5px] leading-[1.6] text-[var(--text-2)]">
         Each run of the deep-research agent costs{" "}
         <strong className="font-[600]">1 credit</strong>. Redeem your coupon to
         get started — you&rsquo;ll connect your own model key next.
       </p>
 
-      {/* Minimal inline status (Task 1). Task 2 replaces this with the locked
-          role="alert" success/error banners. */}
-      {status === "ok" && (
-        <p
-          role="status"
-          className="mb-[18px] text-[13px] text-[var(--success)]"
-        >
-          Coupon redeemed.
-        </p>
-      )}
-      {status === "failed" && (
-        <p role="alert" className="mb-[18px] text-[13px] text-[var(--error)]">
-          Couldn&rsquo;t redeem that coupon. Please try again.
-        </p>
-      )}
+      {/* PAY-04: the current balance stays visible on the paywall itself. */}
+      <div className="mb-6">
+        <BalanceBadge balance={balance} showMeter />
+      </div>
+
+      {/* Banner slot — reserved height to avoid CLS when a banner appears. */}
+      <div className="min-h-[64px]">
+        {banner && (
+          <div
+            role="alert"
+            className={
+              "flex items-start gap-[11px] rounded-[var(--radius)] border p-[13px_14px] " +
+              (isSuccess
+                ? "border-[var(--success-border)] bg-[var(--success-soft)]"
+                : "border-[var(--error-border)] bg-[var(--error-soft)]")
+            }
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={isSuccess ? 2.2 : 2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={
+                "mt-px h-[18px] w-[18px] shrink-0 " +
+                (isSuccess ? "text-[var(--success)]" : "text-[var(--error)]")
+              }
+            >
+              {isSuccess ? (
+                <path d="M20 6 9 17l-5-5" />
+              ) : (
+                <>
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 8v4" />
+                  <path d="M12 16h.01" />
+                </>
+              )}
+            </svg>
+            <div>
+              {banner.title && (
+                <strong
+                  className={
+                    "block text-[13.5px] font-[650] " +
+                    (isSuccess
+                      ? "text-[var(--success)]"
+                      : "text-[var(--error)]")
+                  }
+                >
+                  {banner.title}
+                </strong>
+              )}
+              <span className="text-[13px] leading-[1.5] text-[var(--text-2)]">
+                {banner.body}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div
         className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-[18px]"
@@ -93,6 +186,9 @@ export function Paywall({ balance: _balance }: { balance: number }) {
               id="pw-input"
               value={code}
               onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !pending) redeem();
+              }}
               placeholder="SID_DRDROID"
               autoComplete="off"
               spellCheck={false}
