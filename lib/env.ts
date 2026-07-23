@@ -13,6 +13,12 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   ENCRYPTION_KEY: z.string().min(1).optional(),
+  // Server-only, NO NEXT_PUBLIC_ prefix. Optional so the app still boots without
+  // them (consumed by later Phase-2 slices): API_KEY_ENC_KEY is the 32-byte
+  // AES-256-GCM key for user API-key encryption (KEY-03); SERPAPI_API_KEY backs
+  // the web_search tool (D-29 — SerpAPI, not Brave).
+  API_KEY_ENC_KEY: z.string().min(1).optional(),
+  SERPAPI_API_KEY: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -30,6 +36,8 @@ export function parseEnv(
     NEXT_PUBLIC_SUPABASE_ANON_KEY: source.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     SUPABASE_SERVICE_ROLE_KEY: source.SUPABASE_SERVICE_ROLE_KEY,
     ENCRYPTION_KEY: source.ENCRYPTION_KEY,
+    API_KEY_ENC_KEY: source.API_KEY_ENC_KEY,
+    SERPAPI_API_KEY: source.SERPAPI_API_KEY,
   });
 }
 
@@ -52,4 +60,6 @@ export const env: Env = process.env.VITEST
       NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
       ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
+      API_KEY_ENC_KEY: process.env.API_KEY_ENC_KEY,
+      SERPAPI_API_KEY: process.env.SERPAPI_API_KEY,
     });
