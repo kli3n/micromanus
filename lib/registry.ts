@@ -16,7 +16,7 @@
  * Claude (drops cache usage). OpenAI/Kimi are openai-compat and selectable now.
  */
 
-export type Provider = "anthropic" | "openai" | "kimi" | "custom";
+export type Provider = "anthropic" | "openai" | "kimi" | "openrouter" | "custom";
 
 export interface ModelSpec {
   id: string;
@@ -147,6 +147,24 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     contextTokens: 256_000,
     selectable: true,
   },
+
+  // ---- OpenRouter — openai-compat (base URL https://openrouter.ai/api/v1) ----
+  // A FREE model, so all four per-1M prices are 0 (never null) — it prices to a
+  // NaN-safe $0 through lib/pricing.ts. NOTE: OpenRouter rotates its ":free"
+  // model ids and retires them over time, so this exact id may need updating if
+  // the model is dropped. The wiring (provider seam + base URL) is what is
+  // permanent here — not this specific id.
+  {
+    id: "meta-llama/llama-3.3-70b-instruct:free",
+    provider: "openrouter",
+    label: "Llama 3.3 70B (free · OpenRouter)",
+    inputPer1M: 0,
+    outputPer1M: 0,
+    cacheReadPer1M: 0,
+    cacheWritePer1M: 0,
+    contextTokens: null,
+    selectable: true,
+  },
 ];
 
 const REGISTRY_BY_ID: Map<string, ModelSpec> = new Map(
@@ -162,5 +180,6 @@ export const DEFAULT_BASE_URLS: Record<Provider, string> = {
   anthropic: "https://api.anthropic.com",
   openai: "https://api.openai.com/v1",
   kimi: "https://api.moonshot.ai/v1",
+  openrouter: "https://openrouter.ai/api/v1",
   custom: "",
 };
