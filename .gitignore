@@ -9,7 +9,7 @@ docs/
 /build
 next-env.d.ts
 *.tsbuildinfo
-
+design/BROWSER-DESIGN.md
 # testing
 /coverage
 

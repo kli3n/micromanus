@@ -1,0 +1,794 @@
+<title>MicroManus — Phase 2 UI Demos</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#FBF9F6; --surface:#FFFFFF; --surface-2:#F4F1EC; --surface-3:#EFEBE3;
+    --border:#E9E4DB; --border-strong:#DDD6CA;
+    --text:#211D18; --text-2:#6C6459; --text-3:#9C9385;
+    --accent:#C2410C; --accent-hover:#9A3210; --accent-soft:#FBEAE0; --accent-line:#F1D3C4;
+    --success:#3B7A4B; --success-soft:#E8F1EA; --success-border:#CBE2D2;
+    --error:#B4302A; --error-soft:#FCEDEA; --error-border:#F1C9C2;
+    --warning:#C77D0E; --warning-soft:#FBF0DC; --warning-border:#EBD3A3;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:12px; --radius-sm:8px;
+    --shadow-sm:0 1px 2px rgba(60,45,30,.06);
+    --shadow:0 6px 22px rgba(60,45,30,.10);
+    /* demo chrome */
+    --chrome:#1C1A17; --chrome-2:#2A2621; --chrome-line:#3A342C; --chrome-text:#EDE7DC; --chrome-dim:#9C9385;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:var(--sans);color:var(--text);background:var(--chrome);-webkit-font-smoothing:antialiased}
+  button{font-family:inherit}
+
+  /* ============ DEMO CHROME ============ */
+  .demo{display:flex;flex-direction:column;height:100vh}
+  .demobar{background:var(--chrome);border-bottom:1px solid var(--chrome-line);color:var(--chrome-text);
+    display:flex;align-items:center;gap:16px;padding:0 18px;height:56px;flex:0 0 auto;flex-wrap:wrap}
+  .demobar .dt{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:650;letter-spacing:-.01em;padding-right:6px}
+  .demobar .dt .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(194,65,12,.25)}
+  .demobar .dt small{color:var(--chrome-dim);font-weight:500;font-size:11.5px}
+  .tabs{display:flex;gap:4px;flex-wrap:wrap}
+  .tab{appearance:none;border:1px solid transparent;background:transparent;color:var(--chrome-dim);
+    font-size:12.5px;font-weight:600;height:34px;padding:0 13px;border-radius:8px;cursor:pointer;
+    display:flex;align-items:center;gap:7px;transition:background .15s,color .15s}
+  .tab:hover{background:var(--chrome-2);color:var(--chrome-text)}
+  .tab[aria-selected="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tab .n{font-family:var(--mono);font-size:10.5px;opacity:.7}
+  .tab[aria-selected="true"] .n{opacity:.85}
+  .demobar .hint{margin-left:auto;font-size:11.5px;color:var(--chrome-dim)}
+  .demobar .hint kbd{font-family:var(--mono);font-size:10.5px;background:var(--chrome-2);border:1px solid var(--chrome-line);
+    border-radius:5px;padding:2px 5px;color:var(--chrome-text)}
+
+  .stage{flex:1;min-height:0;overflow:auto;padding:20px;display:grid;place-items:start center;
+    background:
+      radial-gradient(1100px 500px at 50% -10%, #26221D 0%, rgba(38,34,29,0) 60%),
+      var(--chrome)}
+  .frame{width:100%;max-width:1160px;height:760px;background:var(--bg);border-radius:14px;overflow:hidden;
+    border:1px solid var(--chrome-line);box-shadow:0 30px 80px rgba(0,0,0,.45)}
+
+  .screen{display:none;height:100%}
+  .screen.active{display:block}
+
+  /* ============ APP SHELL ============ */
+  .app{display:grid;grid-template-columns:248px 1fr;height:100%}
+  .side{background:var(--surface-2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:14px 12px;min-height:0}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 12px}
+  .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),#E0742E);
+    display:grid;place-items:center;color:#fff;box-shadow:0 3px 9px rgba(194,65,12,.28)}
+  .mark svg{width:17px;height:17px}
+  .wordmark{font-size:15.5px;font-weight:650;letter-spacing:-.02em}
+  .newchat{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border-radius:var(--radius);
+    border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;
+    box-shadow:0 2px 8px rgba(194,65,12,.22);transition:background .15s}
+  .newchat:hover{background:var(--accent-hover)}
+  .newchat.disabled{border:1px dashed var(--border-strong);background:transparent;color:var(--text-2);cursor:not-allowed;box-shadow:none;opacity:.85}
+  .newchat svg{width:16px;height:16px}
+  .newchat .soon{margin-left:auto;font-size:10px;font-weight:600;color:var(--text-3);background:var(--surface-3);padding:2px 6px;border-radius:20px}
+  .side-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);padding:18px 10px 8px}
+  .chatlist{display:flex;flex-direction:column;gap:2px;overflow:auto;flex:1;min-height:0}
+  .chat-item{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid transparent}
+  .chat-item:hover{background:var(--surface-3)}
+  .chat-item.active{background:var(--surface);border-color:var(--border);box-shadow:var(--shadow-sm)}
+  .chat-item .ct{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chat-item .cm{font-size:11px;color:var(--text-3);font-family:var(--mono)}
+  .empty-list{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text-3);gap:8px;padding:0 16px}
+  .empty-list svg{width:26px;height:26px;opacity:.5}
+  .empty-list p{margin:0;font-size:12.5px;line-height:1.5}
+  .nav-mini{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+  .nav-mini a{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:var(--radius-sm);color:var(--text-2);
+    font-size:13px;font-weight:550;text-decoration:none;cursor:pointer}
+  .nav-mini a:hover{background:var(--surface-3);color:var(--text)}
+  .nav-mini a.active{background:var(--surface);color:var(--accent);border:1px solid var(--border)}
+  .nav-mini svg{width:16px;height:16px}
+  .user{display:flex;align-items:center;gap:10px;padding:10px;border-top:1px solid var(--border);margin-top:8px}
+  .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,#8B6D4E,#B08B62);color:#fff;
+    display:grid;place-items:center;font-size:13px;font-weight:650;flex:0 0 auto}
+  .user-meta{min-width:0;flex:1}
+  .user-meta .name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .user-meta .email{font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .signout{width:32px;height:32px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--text-2);
+    display:grid;place-items:center;cursor:pointer;flex:0 0 auto;transition:background .15s,color .15s}
+  .signout:hover{background:var(--surface-3);color:var(--accent)}
+  .signout svg{width:17px;height:17px}
+
+  .main{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .topbar{height:60px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:14px;padding:0 20px;flex:0 0 auto}
+  .crumb{font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+  .crumb .muted{color:var(--text-3);font-weight:500}
+  .spacer{flex:1}
+
+  /* credit badge */
+  .badge{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:999px;font-size:12.5px;font-weight:600;font-family:var(--mono)}
+  .badge.credit{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line)}
+  .badge.warn{background:var(--warning-soft);color:var(--warning);border:1px solid var(--warning-border)}
+  .badge.ok{background:var(--success-soft);color:var(--success);border:1px solid var(--success-border)}
+  .badge .dotpulse{width:7px;height:7px;border-radius:50%;background:currentColor}
+  .badge.credit .dotpulse{animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  @media (prefers-reduced-motion:reduce){.badge.credit .dotpulse{animation:none}}
+
+  /* model picker (topbar) */
+  .modelpick{position:relative}
+  .model-btn{display:flex;align-items:center;gap:9px;height:36px;padding:0 12px;border-radius:var(--radius-sm);
+    border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+  .model-btn:hover{background:var(--surface-2)}
+  .model-btn .price{font-family:var(--mono);font-size:11px;color:var(--text-3);font-weight:500}
+  .model-btn svg{width:14px;height:14px;color:var(--text-3)}
+  .btn-primary{display:flex;align-items:center;gap:8px;height:36px;padding:0 15px;border-radius:var(--radius-sm);border:1px solid var(--accent);
+    background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(194,65,12,.22);transition:background .15s,transform .04s}
+  .btn-primary:hover{background:var(--accent-hover)}.btn-primary:active{transform:translateY(1px)}
+  .btn-primary svg{width:16px;height:16px}
+  .btn-ghost{display:flex;align-items:center;gap:7px;height:36px;padding:0 12px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);
+    background:var(--surface);color:var(--text-2);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+  .btn-ghost:hover{background:var(--surface-2);color:var(--text)}
+  .btn-ghost svg{width:15px;height:15px}
+
+  .canvas{flex:1;min-height:0;overflow:auto}
+
+  /* ---- generic content card ---- */
+  .pane{max-width:620px;margin:0 auto;padding:40px 32px}
+  .pane-wide{max-width:860px;margin:0 auto;padding:34px 32px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+  h1.title{font-size:24px;letter-spacing:-.02em;margin:0 0 8px;text-wrap:balance}
+  p.lede{font-size:14.5px;line-height:1.6;color:var(--text-2);margin:0 0 24px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm)}
+
+  /* ---- fields ---- */
+  .field{margin-bottom:16px}
+  .field > label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .field .hintline{font-size:11.5px;color:var(--text-3);margin-top:6px;line-height:1.5}
+  .input{display:flex;align-items:center;gap:8px;height:44px;padding:0 13px;border-radius:var(--radius);border:1px solid var(--border-strong);background:var(--surface);transition:border-color .15s,box-shadow .15s}
+  .input:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .input input{border:0;outline:0;background:transparent;font-size:14px;color:var(--text);width:100%}
+  .input input.mono{font-family:var(--mono);font-size:13.5px}
+  .input .last4{font-family:var(--mono);font-size:12px;color:var(--text-3);white-space:nowrap}
+  select.sel{height:44px;width:100%;padding:0 12px;border-radius:var(--radius);border:1px solid var(--border-strong);background:var(--surface);font-family:inherit;font-size:14px;color:var(--text);cursor:pointer}
+
+  /* ---- banners ---- */
+  .banner{display:flex;gap:11px;align-items:flex-start;border-radius:var(--radius);padding:13px 14px;margin-bottom:18px}
+  .banner svg{width:18px;height:18px;flex:0 0 auto;margin-top:1px}
+  .banner strong{display:block;font-size:13.5px;font-weight:650;margin-bottom:2px}
+  .banner span{font-size:13px;color:var(--text-2);line-height:1.5}
+  .banner.error{background:var(--error-soft);border:1px solid var(--error-border)}
+  .banner.error svg,.banner.error strong{color:var(--error)}
+  .banner.info{background:var(--accent-soft);border:1px solid var(--accent-line)}
+  .banner.info svg,.banner.info strong{color:var(--accent)}
+  .banner.success{background:var(--success-soft);border:1px solid var(--success-border)}
+  .banner.success svg,.banner.success strong{color:var(--success)}
+  .banner.hidden{display:none}
+
+  .btn-block{width:100%;height:46px;justify-content:center}
+  .btn-disabled{background:var(--surface-2)!important;color:var(--text-3)!important;border-color:var(--border)!important;cursor:not-allowed!important;box-shadow:none!important}
+
+  .soon-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius);background:var(--surface-2);margin-top:14px}
+  .soon-row .sr-l{display:flex;align-items:center;gap:11px}
+  .soon-row .sr-ic{width:34px;height:34px;border-radius:9px;background:var(--surface);border:1px solid var(--border);display:grid;place-items:center;color:var(--text-3)}
+  .soon-row .sr-ic svg{width:17px;height:17px}
+  .soon-row .sr-t{font-size:13.5px;font-weight:600}
+  .soon-row .sr-d{font-size:12px;color:var(--text-3)}
+  .badge.soon{background:var(--surface-3);color:var(--text-3);border:1px solid var(--border);font-family:var(--sans);font-weight:600}
+
+  .divider{height:1px;background:var(--border);margin:22px 0}
+
+  /* ---- model registry (settings) ---- */
+  .reg-group{margin-bottom:18px}
+  .reg-head{display:flex;align-items:center;gap:9px;margin:0 0 8px}
+  .reg-head .prov{font-size:12.5px;font-weight:700;letter-spacing:.02em}
+  .reg-head .keyst{font-size:11px;font-family:var(--mono)}
+  .reg-head .keyst.ok{color:var(--success)}
+  .reg-head .keyst.no{color:var(--text-3)}
+  .reg{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
+  .reg-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:14px;padding:11px 14px;border-bottom:1px solid var(--border)}
+  .reg-row:last-child{border-bottom:0}
+  .reg-row .m-name{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .reg-row .m-id{font-family:var(--mono);font-size:11px;color:var(--text-3);margin-top:2px}
+  .reg-row .m-price{font-family:var(--mono);font-size:12px;color:var(--text-2);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .reg-row .m-price b{color:var(--text);font-weight:600}
+  .reg-row .m-cache{font-family:var(--mono);font-size:10.5px;color:var(--text-3);margin-top:2px}
+  .reg-row.locked{background:var(--surface-2);opacity:.72}
+  .reg-row .rolepill{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);padding:2px 6px;border-radius:5px}
+  .reg-row .needkey{font-size:10.5px;font-weight:600;color:var(--warning);display:inline-flex;align-items:center;gap:4px}
+  .reg-row .needkey svg{width:12px;height:12px}
+
+  /* ---- chat ---- */
+  .chat{display:flex;flex-direction:column;height:100%;min-height:0}
+  .thread{flex:1;min-height:0;overflow:auto;padding:26px 0}
+  .msg{max-width:720px;margin:0 auto 22px;padding:0 28px}
+  .msg .who{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .msg .who .ava{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff}
+  .msg.user .ava{background:linear-gradient(150deg,#8B6D4E,#B08B62)}
+  .msg.bot .ava{background:linear-gradient(150deg,var(--accent),#E0742E)}
+  .msg .who .nm{font-size:12.5px;font-weight:650}
+  .msg .who .nm small{color:var(--text-3);font-weight:500;font-family:var(--mono);font-size:11px;margin-left:4px}
+  .msg .bubble{font-size:14.5px;line-height:1.68;color:var(--text)}
+  .msg.user .bubble{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 15px}
+  .msg .bubble p{margin:0 0 12px}.msg .bubble p:last-child{margin-bottom:0}
+  .msg .bubble h3{font-size:15.5px;margin:16px 0 8px;letter-spacing:-.01em}
+  .msg .bubble ul{margin:0 0 12px;padding-left:20px}.msg .bubble li{margin-bottom:5px}
+  .msg .bubble strong{font-weight:650}
+  .msg .bubble code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+  .msg .bubble a.cite{color:var(--accent);text-decoration:none;font-size:11px;font-family:var(--mono);vertical-align:super;border-bottom:1px dashed var(--accent-line)}
+
+  .tools{display:flex;flex-direction:column;gap:0;border-left:2px solid var(--border-strong);margin:2px 0 14px;padding-left:0}
+  .tool{display:flex;align-items:center;gap:10px;padding:6px 0 6px 14px;font-size:12.5px;color:var(--text-2)}
+  .tool .ti{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;color:var(--text-3)}
+  .tool .ti svg{width:14px;height:14px}
+  .tool.done .ti{color:var(--success)}
+  .tool.run .ti{color:var(--accent)}
+  .tool .tl b{font-weight:600;color:var(--text)}
+  .tool .tmeta{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--text-3)}
+  .spin{width:13px;height:13px;border:2px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+  .cursor-blink{display:inline-block;width:8px;height:16px;background:var(--accent);vertical-align:text-bottom;margin-left:2px;animation:blink 1s step-start infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  .artifact{max-width:720px;margin:4px auto 0;padding:0 28px}
+  .artifact-card{display:flex;align-items:center;gap:13px;border:1px solid var(--accent-line);background:linear-gradient(180deg,#FFF9F5,var(--surface));border-radius:var(--radius);padding:13px 15px}
+  .artifact-card .ac-ic{width:40px;height:40px;border-radius:10px;background:var(--accent-soft);border:1px solid var(--accent-line);display:grid;place-items:center;color:var(--accent);flex:0 0 auto}
+  .artifact-card .ac-ic svg{width:20px;height:20px}
+  .artifact-card .ac-t{font-size:13.5px;font-weight:650}
+  .artifact-card .ac-d{font-size:11.5px;color:var(--text-3);margin-top:1px}
+  .artifact-card .btn-primary{margin-left:auto;height:34px}
+
+  .composer{flex:0 0 auto;border-top:1px solid var(--border);background:var(--surface);padding:14px 20px}
+  .composer-inner{max-width:720px;margin:0 auto}
+  .composer .barmeta{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .composer .barmeta .kv{font-size:11.5px;color:var(--text-3)}
+  .cbox{display:flex;align-items:flex-end;gap:10px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);padding:8px 8px 8px 14px;transition:border-color .15s,box-shadow .15s}
+  .cbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .cbox textarea{flex:1;border:0;outline:0;resize:none;background:transparent;font-family:inherit;font-size:14px;line-height:1.5;color:var(--text);padding:8px 0;max-height:120px}
+  .cbox .send{width:38px;height:38px;flex:0 0 auto;border-radius:9px;border:1px solid var(--accent);background:var(--accent);color:#fff;display:grid;place-items:center;cursor:pointer}
+  .cbox .send:hover{background:var(--accent-hover)}
+  .cbox .send svg{width:17px;height:17px}
+  .cbox.disabled{background:var(--surface-2);border-color:var(--border)}
+  .cbox.disabled textarea{color:var(--text-3)}
+  .cbox.disabled .send{background:var(--surface-3);border-color:var(--border);color:var(--text-3);cursor:not-allowed}
+  .exhausted{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--warning);margin-top:9px;justify-content:center}
+  .exhausted a{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+  .exhausted svg{width:15px;height:15px}
+
+  /* tooltip */
+  .tip{position:relative;border-bottom:1px dotted var(--text-3);cursor:help}
+  .tip .tiptext{visibility:hidden;opacity:0;position:absolute;bottom:135%;left:50%;transform:translateX(-50%);
+    width:240px;background:var(--chrome);color:var(--chrome-text);font-size:11.5px;line-height:1.5;font-weight:400;
+    border-radius:9px;padding:9px 11px;box-shadow:var(--shadow);transition:opacity .15s;z-index:5;text-align:left}
+  .tip:hover .tiptext{visibility:visible;opacity:1}
+
+  /* ---- stats ---- */
+  .stat-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+  .stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 15px;box-shadow:var(--shadow-sm)}
+  .stat-tile .sl{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);margin-bottom:7px}
+  .stat-tile .sv{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .stat-tile .sv.accent{color:var(--accent)}
+  .stat-tile .sd{font-size:11px;color:var(--text-3);margin-top:4px}
+  .table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .table thead th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);padding:11px 14px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+  .table thead th.num{text-align:right}
+  .table td{padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px}
+  .table tbody tr:last-child td{border-bottom:0}
+  .table .rowmain{cursor:pointer;transition:background .12s}
+  .table .rowmain:hover{background:var(--surface-2)}
+  .table td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text-2)}
+  .table td.total{font-family:var(--mono);font-weight:650;color:var(--text);text-align:right;font-variant-numeric:tabular-nums}
+  .table .chatname{font-weight:600;display:flex;align-items:center;gap:8px}
+  .table .chatname .chev{width:13px;height:13px;color:var(--text-3);transition:transform .15s}
+  .table .rowmain.open .chev{transform:rotate(90deg)}
+  .table .modeltag{font-family:var(--mono);font-size:11px;color:var(--text-3)}
+  .drill{background:var(--surface-2)}
+  .drill td{padding:0;border-bottom:1px solid var(--border)}
+  .drill-inner{padding:6px 14px 14px 34px;display:none}
+  .drill.open .drill-inner{display:block}
+  .drill h4{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin:12px 0 8px;font-weight:600}
+  .run-line{display:grid;grid-template-columns:1fr repeat(3,minmax(120px,auto)) auto;gap:14px;align-items:center;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);margin-bottom:6px;font-size:12px}
+  .run-line .rq{font-weight:550;color:var(--text)}
+  .run-line .rc{font-family:var(--mono);color:var(--text-2);text-align:right;font-variant-numeric:tabular-nums}
+  .run-line .rc small{color:var(--text-3);font-size:10px;display:block}
+  .run-line .rt{font-family:var(--mono);font-weight:650;text-align:right;color:var(--text)}
+  .pricenote{font-size:11px;color:var(--text-3);margin-top:8px;line-height:1.5}
+  .pricenote code{font-family:var(--mono);background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+
+  .filmstrip-note{max-width:860px;margin:2px auto 0;padding:0 32px;font-size:11.5px;color:var(--text-3);line-height:1.6}
+  @media (max-width:720px){.stat-strip{grid-template-columns:repeat(2,1fr)}.frame{height:680px}}
+</style>
+
+<div class="demo">
+  <div class="demobar">
+    <div class="dt"><span class="dot"></span>MicroManus <small>Phase 2 · UI demos</small></div>
+    <div class="tabs" role="tablist" aria-label="Screens">
+      <button class="tab" role="tab" data-target="paywall" aria-selected="true"><span class="n">01</span>Paywall</button>
+      <button class="tab" role="tab" data-target="settings" aria-selected="false"><span class="n">02</span>Key &amp; models</button>
+      <button class="tab" role="tab" data-target="chat" aria-selected="false"><span class="n">03</span>Research chat</button>
+      <button class="tab" role="tab" data-target="exhausted" aria-selected="false"><span class="n">04</span>Out of credits</button>
+      <button class="tab" role="tab" data-target="stats" aria-selected="false"><span class="n">05</span>Cost &amp; stats</button>
+    </div>
+    <div class="hint">Interactive · try the buttons · <kbd>&larr;</kbd> <kbd>&rarr;</kbd> to switch</div>
+  </div>
+
+  <div class="stage">
+    <div class="frame">
+
+      <!-- ============================ 01 · PAYWALL ============================ -->
+      <section class="screen active" id="paywall">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span><span class="wordmark">MicroManus</span></div>
+            <button class="newchat disabled">New research chat<span class="soon">Needs credits</span></button>
+            <div class="side-label">Chats</div>
+            <div class="empty-list">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+              <p>Redeem a credit to start<br>your first research run.</p>
+            </div>
+            <div class="user"><span class="avatar">SK</span><div class="user-meta"><div class="name">Siddarth K.</div><div class="email">reviewer@drdroid.io</div></div>
+              <button class="signout" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg></button>
+            </div>
+          </aside>
+          <section class="main">
+            <header class="topbar">
+              <div class="crumb">Get started <span class="muted">/ Add credits</span></div>
+              <div class="spacer"></div>
+              <span class="badge warn" id="pw-balance"><span class="dotpulse"></span>0 credits</span>
+            </header>
+            <div class="canvas">
+              <div class="pane">
+                <p class="eyebrow">Step 1 of 3 · Credits</p>
+                <h1 class="title">Add credits to run research</h1>
+                <p class="lede">Each run of the deep-research agent costs <strong>1 credit</strong>. Redeem your coupon to get started — you'll connect your own model key next.</p>
+
+                <div class="banner error hidden" id="pw-err"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg><div><strong id="pw-err-t">Invalid code</strong><span id="pw-err-d">That coupon doesn't exist. Check for typos and try again.</span></div></div>
+                <div class="banner success hidden" id="pw-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><div><strong>5 credits added</strong><span>You're set for 5 research runs. Next: connect your model key.</span></div></div>
+
+                <div class="card" style="padding:18px">
+                  <div class="field" style="margin-bottom:12px">
+                    <label for="pw-input">Coupon code</label>
+                    <div class="input"><input id="pw-input" class="mono" placeholder="SID_DRDROID" autocomplete="off" spellcheck="false"></div>
+                    <div class="hintline">Have the reviewer coupon? Paste it above. Grants 5 credits, one time.</div>
+                  </div>
+                  <button class="btn-primary btn-block" id="pw-redeem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6"></path><path d="M2 7h20v5H2z"></path><path d="M12 22V7"></path><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path></svg>Redeem coupon</button>
+                </div>
+
+                <div class="soon-row">
+                  <div class="sr-l"><span class="sr-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"></rect><path d="M2 10h20"></path></svg></span>
+                    <div><div class="sr-t">Pay with card</div><div class="sr-d">$5 test-mode payment → 5 credits</div></div></div>
+                  <span class="badge soon">Soon</span>
+                </div>
+
+                <p class="filmstrip-note" style="padding:16px 0 0;max-width:none">Demo: try <code style="font-family:var(--mono);background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px">SID_DRDROID</code> (valid), any other code (invalid), or press Redeem twice (already redeemed).</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============================ 02 · SETTINGS (KEY + MODELS) ============================ -->
+      <section class="screen" id="settings">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span><span class="wordmark">MicroManus</span></div>
+            <button class="newchat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>New research chat</button>
+            <div class="side-label">Chats</div>
+            <div class="chatlist" style="flex:0 0 auto"><div class="chat-item"><span class="ct">Semiconductor export controls</span><span class="cm">$0.041 · haiku</span></div></div>
+            <div class="side-label">Workspace</div>
+            <div class="nav-mini">
+              <a class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Settings &amp; keys</a>
+              <a data-goto="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>Cost &amp; usage</a>
+            </div>
+            <div class="user"><span class="avatar">SK</span><div class="user-meta"><div class="name">Siddarth K.</div><div class="email">reviewer@drdroid.io</div></div>
+              <button class="signout" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg></button>
+            </div>
+          </aside>
+          <section class="main">
+            <header class="topbar"><div class="crumb">Settings <span class="muted">/ Model keys</span></div><div class="spacer"></div><span class="badge credit"><span class="dotpulse"></span>5 credits</span></header>
+            <div class="canvas">
+              <div class="pane-wide">
+                <p class="eyebrow">Step 2 of 3 · Bring your own key</p>
+                <h1 class="title">Connect a model provider</h1>
+                <p class="lede">MicroManus never stores your key in plaintext — it's encrypted and used only while your run executes. Verify it with a 1-token test before saving.</p>
+
+                <div class="card" style="padding:20px;margin-bottom:22px">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                    <div class="field" style="margin:0"><label>Provider</label>
+                      <select class="sel" id="set-prov"><option value="openai">OpenAI</option><option value="anthropic">Anthropic (Claude)</option><option value="kimi">Kimi / Moonshot</option></select>
+                    </div>
+                    <div class="field" style="margin:0"><label>Base URL <span style="color:var(--text-3);font-weight:400">· editable</span></label>
+                      <div class="input"><input id="set-url" class="mono" value="https://api.openai.com/v1"></div>
+                    </div>
+                  </div>
+                  <div class="field" style="margin:16px 0 0"><label>API key</label>
+                    <div class="input"><input id="set-key" class="mono" type="text" placeholder="sk-..." autocomplete="off" spellcheck="false"><span class="last4" id="set-last4" style="display:none">last 4: 8f2a</span></div>
+                    <div class="hintline">After saving you'll only ever see the last 4 characters.</div>
+                  </div>
+                  <div style="display:flex;gap:10px;margin-top:16px;align-items:center">
+                    <button class="btn-ghost" id="set-test"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"></path><circle cx="12" cy="12" r="9"></circle></svg>Test with 1 token</button>
+                    <span id="set-teststate" style="font-size:12.5px;color:var(--text-3)"></span>
+                    <button class="btn-primary" id="set-save" style="margin-left:auto" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><path d="M17 21v-8H7v8M7 3v5h8"></path></svg>Save key</button>
+                  </div>
+                </div>
+
+                <p class="eyebrow" style="color:var(--text-3)">Step 3 · Model registry <span style="color:var(--text-3);text-transform:none;font-weight:500;letter-spacing:0">— verified per-1M pricing, pick per chat</span></p>
+
+                <div class="reg-group">
+                  <div class="reg-head"><span class="prov">Anthropic — Claude</span><span class="keyst no" id="reg-k-anthropic">○ no key</span></div>
+                  <div class="reg" data-prov="anthropic">
+                    <div class="reg-row locked"><div><div class="m-name">Opus 4.8 <span class="rolepill">Flagship</span></div><div class="m-id">claude-opus-4-8</div></div><div class="m-price"><b>$5.00</b> in · <b>$25.00</b> out<div class="m-cache">cache $0.50 r / $6.25 w</div></div><span class="needkey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>add key</span></div>
+                    <div class="reg-row locked"><div><div class="m-name">Sonnet 4.6 <span class="rolepill">Balanced</span></div><div class="m-id">claude-sonnet-4-6</div></div><div class="m-price"><b>$3.00</b> in · <b>$15.00</b> out<div class="m-cache">cache $0.30 r / $3.75 w</div></div><span class="needkey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>add key</span></div>
+                    <div class="reg-row locked"><div><div class="m-name">Haiku 4.5 <span class="rolepill">Fast</span></div><div class="m-id">claude-haiku-4-5</div></div><div class="m-price"><b>$1.00</b> in · <b>$5.00</b> out<div class="m-cache">cache $0.10 r / $1.25 w</div></div><span class="needkey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>add key</span></div>
+                  </div>
+                </div>
+
+                <div class="reg-group">
+                  <div class="reg-head"><span class="prov">OpenAI</span><span class="keyst no" id="reg-k-openai">○ no key</span></div>
+                  <div class="reg" data-prov="openai">
+                    <div class="reg-row locked"><div><div class="m-name">GPT-5.6 Sol <span class="rolepill">Flagship</span></div><div class="m-id">gpt-5.6-sol</div></div><div class="m-price"><b>$5.00</b> in · <b>$30.00</b> out<div class="m-cache">cache $0.50 r</div></div><span class="needkey ns"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>add key</span></div>
+                    <div class="reg-row locked"><div><div class="m-name">GPT-5.6 Terra <span class="rolepill">Balanced</span></div><div class="m-id">gpt-5.6-terra</div></div><div class="m-price"><b>$2.50</b> in · <b>$15.00</b> out<div class="m-cache">cache $0.25 r</div></div><span class="needkey ns"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>add key</span></div>
+                    <div class="reg-row locked"><div><div class="m-name">GPT-5.6 Luna <span class="rolepill">Fast</span></div><div class="m-id">gpt-5.6-luna</div></div><div class="m-price"><b>$1.00</b> in · <b>$6.00</b> out<div class="m-cache">cache $0.10 r</div></div><span class="needkey ns"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>add key</span></div>
+                  </div>
+                </div>
+
+                <div class="reg-group">
+                  <div class="reg-head"><span class="prov">Kimi — Moonshot</span><span class="keyst no" id="reg-k-kimi">○ no key</span></div>
+                  <div class="reg" data-prov="kimi">
+                    <div class="reg-row locked"><div><div class="m-name">Kimi K3 <span class="rolepill">Flagship</span></div><div class="m-id">kimi-k3</div></div><div class="m-price"><b>$3.00</b> in · <b>$15.00</b> out<div class="m-cache">cache $0.30 hit</div></div><span class="needkey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>add key</span></div>
+                    <div class="reg-row locked"><div><div class="m-name">Kimi K2.7 Code <span class="rolepill">Agentic</span></div><div class="m-id">kimi-k2.7-code</div></div><div class="m-price"><b>$0.95</b> in · <b>$4.00</b> out<div class="m-cache">cache $0.19 hit</div></div><span class="needkey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>add key</span></div>
+                  </div>
+                </div>
+                <p class="pricenote">Prices verified against each provider's pricing page at build time (D-24). Cost is always computed from provider-reported usage — never estimated.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============================ 03 · RESEARCH CHAT ============================ -->
+      <section class="screen" id="chat">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span><span class="wordmark">MicroManus</span></div>
+            <button class="newchat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>New research chat</button>
+            <div class="side-label">Chats</div>
+            <div class="chatlist">
+              <div class="chat-item active"><span class="ct">EU AI Act enforcement timeline</span><span class="cm">$0.038 · sonnet-4-6</span></div>
+              <div class="chat-item"><span class="ct">Semiconductor export controls</span><span class="cm">$0.041 · haiku-4-5</span></div>
+              <div class="chat-item"><span class="ct">Solid-state battery makers 2026</span><span class="cm">$0.112 · opus-4-8</span></div>
+              <div class="chat-item"><span class="ct">Ozempic supply outlook</span><span class="cm">$0.006 · luna</span></div>
+            </div>
+            <div class="side-label">Workspace</div>
+            <div class="nav-mini">
+              <a data-goto="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Settings &amp; keys</a>
+              <a data-goto="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>Cost &amp; usage</a>
+            </div>
+            <div class="user"><span class="avatar">SK</span><div class="user-meta"><div class="name">Siddarth K.</div><div class="email">reviewer@drdroid.io</div></div>
+              <button class="signout" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg></button>
+            </div>
+          </aside>
+          <section class="main">
+            <header class="topbar">
+              <div class="crumb">EU AI Act enforcement timeline</div>
+              <div class="spacer"></div>
+              <div class="modelpick"><button class="model-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3Z"></path></svg>Sonnet 4.6 <span class="price">$3 / $15</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></button></div>
+            </header>
+            <div class="chat">
+              <div class="thread" id="chat-thread">
+                <div class="msg user"><div class="who"><span class="ava">SK</span><span class="nm">You</span></div><div class="bubble">When does EU AI Act enforcement actually begin, and which obligations hit first?</div></div>
+
+                <div class="msg bot" id="chat-bot">
+                  <div class="who"><span class="ava"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span><span class="nm">Research agent <small>iter 3 / 12</small></span></div>
+
+                  <div class="tools" id="chat-tools">
+                    <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="tl"><b>Searched the web</b> · "EU AI Act enforcement dates"</span><span class="tmeta">SerpAPI · 6 results</span></div>
+                    <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="tl"><b>Read page</b> · digital-strategy.ec.europa.eu</span><span class="tmeta">4,180 tok</span></div>
+                    <div class="tool run" id="chat-tool-live"><span class="ti"><span class="spin"></span></span><span class="tl"><b>Reading page</b> · artificialintelligenceact.eu/timeline</span><span class="tmeta">fetching…</span></div>
+                  </div>
+
+                  <div class="bubble" id="chat-answer"><span class="cursor-blink" id="chat-cursor"></span></div>
+                </div>
+              </div>
+
+              <div class="artifact" id="chat-artifact" style="display:none">
+                <div class="artifact-card"><span class="ac-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M9 15h6M9 18h4"></path></svg></span>
+                  <div><div class="ac-t">EU AI Act — enforcement timeline.pdf</div><div class="ac-d">3 pages · generated from this research</div></div>
+                  <button class="btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5"></path><path d="M12 15V3"></path></svg>Download</button>
+                </div>
+              </div>
+
+              <div class="composer">
+                <div class="composer-inner">
+                  <div class="barmeta"><span class="badge credit"><span class="dotpulse"></span>5 credits</span><span class="kv">1 credit = 1 agent run</span><span class="spacer"></span><button class="btn-ghost" id="chat-replay" style="height:30px;font-size:12px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8"></path><path d="M3 3v5h5"></path></svg>Replay run</button></div>
+                  <div class="cbox"><textarea rows="1" placeholder="Ask a follow-up research question…"></textarea><button class="send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg></button></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============================ 04 · OUT OF CREDITS ============================ -->
+      <section class="screen" id="exhausted">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span><span class="wordmark">MicroManus</span></div>
+            <button class="newchat disabled">New research chat<span class="soon">0 credits</span></button>
+            <div class="side-label">Chats</div>
+            <div class="chatlist">
+              <div class="chat-item active"><span class="ct">EU AI Act enforcement timeline</span><span class="cm">$0.038 · sonnet-4-6</span></div>
+              <div class="chat-item"><span class="ct">Semiconductor export controls</span><span class="cm">$0.041 · haiku-4-5</span></div>
+              <div class="chat-item"><span class="ct">Solid-state battery makers 2026</span><span class="cm">$0.112 · opus-4-8</span></div>
+            </div>
+            <div class="side-label">Workspace</div>
+            <div class="nav-mini">
+              <a data-goto="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Settings &amp; keys</a>
+            </div>
+            <div class="user"><span class="avatar">SK</span><div class="user-meta"><div class="name">Siddarth K.</div><div class="email">reviewer@drdroid.io</div></div>
+              <button class="signout" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg></button>
+            </div>
+          </aside>
+          <section class="main">
+            <header class="topbar">
+              <div class="crumb">EU AI Act enforcement timeline</div>
+              <div class="spacer"></div>
+              <span class="badge warn" title="You're out of credits"><span class="dotpulse"></span>0 credits</span>
+            </header>
+            <div class="chat">
+              <div class="thread">
+                <div class="msg user"><div class="who"><span class="ava">SK</span><span class="nm">You</span></div><div class="bubble">Summarise the high-risk system obligations under Article 6.</div></div>
+                <div class="msg bot">
+                  <div class="who"><span class="ava"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span><span class="nm">Research agent <small>done · 7 iterations</small></span></div>
+                  <div class="bubble">
+                    <p>High-risk systems under <strong>Article 6</strong> fall into two buckets — those covered by existing product-safety law (Annex I) and the standalone use-cases in Annex III. The core obligations are:</p>
+                    <ul><li>a documented <strong>risk-management system</strong> across the lifecycle;</li><li><strong>data governance</strong> with representative, bias-checked training data;</li><li><strong>human oversight</strong> and post-market monitoring.</li></ul>
+                    <p>Enforcement of these provisions begins <strong>2 August 2026</strong> for most Annex III systems. <a class="cite" href="#">[1]</a></p>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <div class="composer-inner">
+                  <div class="barmeta"><span class="badge warn"><span class="dotpulse"></span>0 credits</span><span class="kv">1 credit = 1 agent run</span></div>
+                  <div class="cbox disabled"><textarea rows="1" placeholder="Ask a follow-up research question…" disabled></textarea><button class="send" disabled aria-disabled="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg></button></div>
+                  <div class="exhausted"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>Credits exhausted, please recharge <a data-goto="paywall">credits</a></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============================ 05 · COST & STATS ============================ -->
+      <section class="screen" id="stats">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span><span class="wordmark">MicroManus</span></div>
+            <button class="newchat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>New research chat</button>
+            <div class="side-label">Chats</div>
+            <div class="chatlist" style="flex:0 0 auto">
+              <div class="chat-item" data-goto="chat"><span class="ct">EU AI Act enforcement timeline</span><span class="cm">$0.038 · sonnet-4-6</span></div>
+              <div class="chat-item"><span class="ct">Semiconductor export controls</span><span class="cm">$0.041 · haiku-4-5</span></div>
+              <div class="chat-item"><span class="ct">Solid-state battery makers 2026</span><span class="cm">$0.112 · opus-4-8</span></div>
+            </div>
+            <div class="side-label">Workspace</div>
+            <div class="nav-mini">
+              <a data-goto="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Settings &amp; keys</a>
+              <a class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>Cost &amp; usage</a>
+            </div>
+            <div class="user"><span class="avatar">SK</span><div class="user-meta"><div class="name">Siddarth K.</div><div class="email">reviewer@drdroid.io</div></div>
+              <button class="signout" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg></button>
+            </div>
+          </aside>
+          <section class="main">
+            <header class="topbar"><div class="crumb">Cost &amp; usage</div><div class="spacer"></div><span class="badge credit"><span class="dotpulse"></span>2 credits</span></header>
+            <div class="canvas">
+              <div class="pane-wide">
+                <h1 class="title">Cost &amp; usage</h1>
+                <p class="lede">Every model call is metered from provider-reported token counts. Click a chat to see its per-run breakdown and the exact per-1M prices used.</p>
+
+                <div class="stat-strip">
+                  <div class="stat-tile"><div class="sl">All-time spend</div><div class="sv accent">$0.197</div><div class="sd">across 4 chats · 9 runs</div></div>
+                  <div class="stat-tile"><div class="sl">Input tokens</div><div class="sv">61,204</div><div class="sd">$0.071</div></div>
+                  <div class="stat-tile"><div class="sl">Output tokens</div><div class="sv">18,530</div><div class="sd">$0.118</div></div>
+                  <div class="stat-tile"><div class="sl">Cache read</div><div class="sv">42,880</div><div class="sd">−$0.008 saved</div></div>
+                </div>
+
+                <div style="overflow-x:auto">
+                  <table class="table">
+                    <thead><tr><th>Chat</th><th>Model</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache</th><th class="num">Cost</th></tr></thead>
+                    <tbody>
+                      <tr class="rowmain" data-drill="d1"><td><span class="chatname"><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>EU AI Act enforcement timeline</span></td><td class="modeltag">sonnet-4-6</td><td class="num">18,420</td><td class="num">3,910</td><td class="num">12,300</td><td class="total">$0.038</td></tr>
+                      <tr class="drill" id="d1"><td colspan="6"><div class="drill-inner">
+                        <h4>Per-run breakdown · 3 runs</h4>
+                        <div class="run-line"><span class="rq">"When does enforcement begin?"</span><span class="rc">7,110<small>input</small></span><span class="rc">1,540<small>output</small></span><span class="rc">6,200<small>cache read</small></span><span class="rt">$0.014</span></div>
+                        <div class="run-line"><span class="rq">"High-risk obligations (Art. 6)"</span><span class="rc">6,980<small>input</small></span><span class="rc">1,480<small>output</small></span><span class="rc">6,100<small>cache read</small></span><span class="rt">$0.013</span></div>
+                        <div class="run-line"><span class="rq">"Penalties for non-compliance"</span><span class="rc">4,330<small>input</small></span><span class="rc">890<small>output</small></span><span class="rc">0<small>cache read</small></span><span class="rt">$0.011</span></div>
+                        <p class="pricenote">Priced at <code>claude-sonnet-4-6</code>: input <code>$3.00</code>/1M · output <code>$15.00</code>/1M · cache read <code>$0.30</code>/1M. Cost = Σ(tokens ÷ 1e6 × price) per class.</p>
+                      </div></td></tr>
+
+                      <tr class="rowmain" data-drill="d2"><td><span class="chatname"><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>Semiconductor export controls</span></td><td class="modeltag">haiku-4-5</td><td class="num">21,900</td><td class="num">5,240</td><td class="num">18,900</td><td class="total">$0.041</td></tr>
+                      <tr class="drill" id="d2"><td colspan="6"><div class="drill-inner">
+                        <h4>Per-run breakdown · 2 runs</h4>
+                        <div class="run-line"><span class="rq">"Latest BIS entity-list additions"</span><span class="rc">12,400<small>input</small></span><span class="rc">3,010<small>output</small></span><span class="rc">10,800<small>cache read</small></span><span class="rt">$0.028</span></div>
+                        <div class="run-line"><span class="rq">"Impact on TSMC / ASML"</span><span class="rc">9,500<small>input</small></span><span class="rc">2,230<small>output</small></span><span class="rc">8,100<small>cache read</small></span><span class="rt">$0.013</span></div>
+                        <p class="pricenote">Priced at <code>claude-haiku-4-5</code>: input <code>$1.00</code>/1M · output <code>$5.00</code>/1M · cache read <code>$0.10</code>/1M.</p>
+                      </div></td></tr>
+
+                      <tr class="rowmain" data-drill="d3"><td><span class="chatname"><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>Solid-state battery makers 2026</span></td><td class="modeltag">opus-4-8</td><td class="num">16,300</td><td class="num">8,120</td><td class="num">9,400</td><td class="total">$0.112</td></tr>
+                      <tr class="drill" id="d3"><td colspan="6"><div class="drill-inner">
+                        <h4>Per-run breakdown · 3 runs</h4>
+                        <div class="run-line"><span class="rq">"Leading solid-state startups"</span><span class="rc">6,100<small>input</small></span><span class="rc">3,200<small>output</small></span><span class="rc">3,400<small>cache read</small></span><span class="rt">$0.045</span></div>
+                        <div class="run-line"><span class="rq">"QuantumScape timeline <span style='color:var(--warning)'>(ran out of compute time)</span>"</span><span class="rc">5,200<small>input</small></span><span class="rc">2,720<small>output</small></span><span class="rc">3,000<small>cache read</small></span><span class="rt">$0.042</span></div>
+                        <div class="run-line"><span class="rq">"Cost-per-kWh projections"</span><span class="rc">5,000<small>input</small></span><span class="rc">2,200<small>output</small></span><span class="rc">3,000<small>cache read</small></span><span class="rt">$0.025</span></div>
+                        <p class="pricenote">Priced at <code>claude-opus-4-8</code>: input <code>$5.00</code>/1M · output <code>$25.00</code>/1M · cache read <code>$0.50</code>/1M.</p>
+                      </div></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="filmstrip-note" style="padding:14px 0 0;max-width:none">Click any chat row to expand its per-run drill-down.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  var screens = {};
+  document.querySelectorAll('.screen').forEach(function(s){ screens[s.id]=s; });
+  var order = tabs.map(function(t){ return t.getAttribute('data-target'); });
+
+  function show(id){
+    Object.keys(screens).forEach(function(k){ screens[k].classList.toggle('active', k===id); });
+    tabs.forEach(function(t){ t.setAttribute('aria-selected', String(t.getAttribute('data-target')===id)); });
+    document.querySelector('.stage').scrollTop = 0;
+    if(id==='chat') resetChatDemo();
+  }
+  tabs.forEach(function(t){ t.addEventListener('click', function(){ show(t.getAttribute('data-target')); }); });
+
+  // cross-screen links
+  document.querySelectorAll('[data-goto]').forEach(function(el){
+    el.addEventListener('click', function(e){ e.preventDefault(); show(el.getAttribute('data-goto')); });
+  });
+
+  // keyboard arrows
+  document.addEventListener('keydown', function(e){
+    if(e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    var cur = order.indexOf(document.querySelector('.tab[aria-selected="true"]').getAttribute('data-target'));
+    if(e.key==='ArrowRight'){ show(order[(cur+1)%order.length]); }
+    if(e.key==='ArrowLeft'){ show(order[(cur-1+order.length)%order.length]); }
+  });
+
+  /* ---------- Paywall interactivity ---------- */
+  var redeemed = false;
+  var input = document.getElementById('pw-input');
+  var errB = document.getElementById('pw-err'), okB = document.getElementById('pw-ok');
+  var errT = document.getElementById('pw-err-t'), errD = document.getElementById('pw-err-d');
+  var bal = document.getElementById('pw-balance');
+  document.getElementById('pw-redeem').addEventListener('click', function(){
+    var code = (input.value||'').trim().toUpperCase();
+    errB.classList.add('hidden'); okB.classList.add('hidden');
+    if(code !== 'SID_DRDROID'){
+      errT.textContent='Invalid code';
+      errD.textContent = code ? 'That coupon doesn’t exist. Check for typos and try again.' : 'Enter your coupon code to redeem credits.';
+      errB.classList.remove('hidden'); return;
+    }
+    if(redeemed){
+      errT.textContent='Already redeemed';
+      errD.textContent='This coupon has already been used on your account. Each coupon grants credits once.';
+      errB.classList.remove('hidden'); return;
+    }
+    redeemed = true;
+    okB.classList.remove('hidden');
+    bal.className='badge credit'; bal.innerHTML='<span class="dotpulse"></span>5 credits';
+  });
+
+  /* ---------- Settings: test-key + save + registry unlock ---------- */
+  var prov = document.getElementById('set-prov'), url = document.getElementById('set-url');
+  var keyIn = document.getElementById('set-key'), test = document.getElementById('set-test');
+  var tstate = document.getElementById('set-teststate'), save = document.getElementById('set-save');
+  var last4 = document.getElementById('set-last4');
+  var urls = { openai:'https://api.openai.com/v1', anthropic:'https://api.anthropic.com', kimi:'https://api.moonshot.ai/v1' };
+  var verified = false;
+  prov.addEventListener('change', function(){ url.value = urls[prov.value]; verified=false; save.disabled=true; tstate.textContent=''; });
+  test.addEventListener('click', function(){
+    if(!keyIn.value){ tstate.style.color='var(--error)'; tstate.textContent='Enter a key first'; return; }
+    verified=false; save.disabled=true;
+    tstate.style.color='var(--text-3)'; tstate.innerHTML='<span class="spin" style="display:inline-block;vertical-align:-2px"></span> verifying… (1-token call)';
+    setTimeout(function(){
+      verified=true; save.disabled=false;
+      tstate.style.color='var(--success)'; tstate.innerHTML='✓ key works — model responded';
+    }, 1200);
+  });
+  save.addEventListener('click', function(){
+    if(!verified) return;
+    var v = keyIn.value;
+    last4.textContent = 'last 4: ' + (v.length>=4 ? v.slice(-4) : v);
+    last4.style.display='inline'; keyIn.value = 'sk-··················'; keyIn.readOnly=true;
+    var p = prov.value;
+    var ks = document.getElementById('reg-k-'+p);
+    if(ks){ ks.className='keyst ok'; ks.textContent='✓ key saved'; }
+    var group = document.querySelector('.reg[data-prov="'+p+'"]');
+    if(group){ group.querySelectorAll('.reg-row').forEach(function(r){ r.classList.remove('locked'); var nk=r.querySelector('.needkey'); if(nk) nk.style.display='none'; }); }
+    save.textContent='Saved'; save.disabled=true;
+    tstate.style.color='var(--success)'; tstate.innerHTML='✓ saved — '+ ({openai:'OpenAI',anthropic:'Anthropic',kimi:'Kimi'})[p] +' models unlocked below';
+  });
+
+  /* ---------- Chat streaming demo ---------- */
+  var answerText = "Enforcement is **phased**, not a single switch-on date:\n\nH3 The dates that matter\n- **2 Feb 2025** — prohibited-use bans already in force (social scoring, untargeted scraping).\n- **2 Aug 2025** — obligations for **general-purpose AI models** apply.\n- **2 Aug 2026** — the bulk of **high-risk** system obligations (Annex III) become enforceable. <CITE1>\n- **2 Aug 2027** — high-risk systems embedded in regulated products (Annex I).\n\nSo the first hard deadline most builders feel is **August 2026** for high-risk use-cases. <CITE2>";
+  var thread = document.getElementById('chat-thread');
+  var answerEl = document.getElementById('chat-answer');
+  var cursor = document.getElementById('chat-cursor');
+  var liveTool = document.getElementById('chat-tool-live');
+  var artifact = document.getElementById('chat-artifact');
+  var timer = null;
+
+  function renderMd(t){
+    // minimal, safe: escape then apply a few inline rules
+    var html = t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    var lines = html.split('\n'); var out=''; var inUl=false;
+    lines.forEach(function(ln){
+      if(/^H3 /.test(ln)){ if(inUl){out+='</ul>';inUl=false;} out+='<h3>'+ln.slice(3)+'</h3>'; return; }
+      if(/^- /.test(ln)){ if(!inUl){out+='<ul>';inUl=true;} out+='<li>'+ln.slice(2)+'</li>'; return; }
+      if(inUl){out+='</ul>';inUl=false;}
+      if(ln.trim()==='') return;
+      out+='<p>'+ln+'</p>';
+    });
+    if(inUl) out+='</ul>';
+    out = out.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    out = out.replace(/<CITE1>/g,'<a class="cite" href="#">[1]</a>').replace(/<CITE2>/g,'<a class="cite" href="#">[2]</a>');
+    return out;
+  }
+
+  function resetChatDemo(){
+    if(timer){ clearInterval(timer); timer=null; }
+    answerEl.innerHTML=''; answerEl.appendChild(cursor); cursor.style.display='inline-block';
+    liveTool.classList.remove('done'); liveTool.classList.add('run');
+    liveTool.querySelector('.ti').innerHTML='<span class="spin"></span>';
+    liveTool.querySelector('.tmeta').textContent='fetching…';
+    artifact.style.display='none';
+    // begin after a beat: finish the live tool, then stream
+    setTimeout(function(){
+      liveTool.classList.remove('run'); liveTool.classList.add('done');
+      liveTool.querySelector('.ti').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>';
+      liveTool.querySelector('.tmeta').textContent='3,905 tok';
+      streamAnswer();
+    }, 1100);
+  }
+
+  function streamAnswer(){
+    var i=0; var step = Math.max(2, Math.floor(answerText.length/140));
+    timer = setInterval(function(){
+      i += step;
+      var slice = answerText.slice(0,i);
+      answerEl.innerHTML = renderMd(slice);
+      answerEl.appendChild(cursor);
+      thread.scrollTop = thread.scrollHeight;
+      if(i>=answerText.length){
+        clearInterval(timer); timer=null;
+        answerEl.innerHTML = renderMd(answerText);
+        cursor.style.display='none';
+        artifact.style.display='block';
+        thread.scrollTop = thread.scrollHeight;
+      }
+    }, 55);
+  }
+
+  var replay = document.getElementById('chat-replay');
+  if(replay) replay.addEventListener('click', resetChatDemo);
+
+  // kick off chat demo if it loads as active (it won't by default, but safe)
+  if(document.getElementById('chat').classList.contains('active')) resetChatDemo();
+
+  /* ---------- Stats drill-down ---------- */
+  document.querySelectorAll('.rowmain').forEach(function(row){
+    row.addEventListener('click', function(){
+      var d = document.getElementById(row.getAttribute('data-drill'));
+      var open = d.classList.toggle('open');
+      row.classList.toggle('open', open);
+    });
+  });
+})();
+</script>
