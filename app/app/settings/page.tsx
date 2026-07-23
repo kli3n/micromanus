@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DEFAULT_BASE_URLS, type Provider } from "@/lib/registry";
+import { DEFAULT_BASE_URLS, MODEL_REGISTRY, type Provider } from "@/lib/registry";
 import type { KeyMetadata } from "@/lib/keys/metadata";
+import { ModelPicker } from "@/components/ModelPicker";
 
 /**
  * /app/settings — the persistent BYOK Settings page (D-14, Steps 2 & 3).
@@ -42,6 +43,11 @@ export default function SettingsPage() {
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [keys, setKeys] = useState<KeyMetadata[]>([]);
   const [loadingKeys, setLoadingKeys] = useState(true);
+  // KEY-05: the picked model id. Persistence to chats.model_id is the chat
+  // plan's job; here it just drives the registry selection surface.
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(
+    undefined,
+  );
   // KEY-02 verify-before-save gate: Save stays disabled until a successful
   // 1-token probe for the CURRENT provider/base URL/key. Any change resets it.
   const [verifyState, setVerifyState] = useState<
@@ -342,6 +348,29 @@ export default function SettingsPage() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/* Step 3 · Model registry (KEY-05 / D-22). Saving a provider's key
+          unlocks that provider's rows via savedProviders below. */}
+      <div className="mt-[22px]">
+        <p className="m-0 mb-3 text-[11px] font-[700] uppercase tracking-[.08em] text-[var(--text-3)]">
+          Step 3 · Model registry{" "}
+          <span className="font-[500] normal-case tracking-normal text-[var(--text-3)]">
+            — verified per-1M pricing, pick per chat
+          </span>
+        </p>
+        <ModelPicker
+          variant="registry"
+          models={MODEL_REGISTRY}
+          savedProviders={keys.map((k) => k.provider)}
+          value={selectedModel}
+          onChange={setSelectedModel}
+        />
+        <p className="mt-4 text-[11.5px] leading-[1.5] text-[var(--text-3)]">
+          Prices verified against each provider&apos;s pricing page at build time
+          (D-24). Cost is always computed from provider-reported usage — never
+          estimated.
+        </p>
       </div>
     </div>
   );
