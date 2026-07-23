@@ -6,7 +6,7 @@ import { getModel } from "@/lib/registry";
 /**
  * /app/stats — Cost & usage (STAT-02, STAT-03, UX-02; D-16).
  *
- * A read-only async Server Component (no "use client"): every number comes from
+ * A read-only async Server Component (renders on the server only): every number comes from
  * rows the run handler (02-05) already wrote into the schema owned by 02-01
  * (`usage_events`, `chats`, `runs`, `messages`) — never re-estimated, never
  * tiktoken. Money is the STORED provider-reported `cost_usd`; per-class tile
@@ -517,8 +517,8 @@ export default async function StatsPage() {
                             <code>{formatPrice(r.outputPrice)}</code>/1M · cache
                             read <code>{formatPrice(r.cacheReadPrice)}</code>/1M ·
                             cache write{" "}
-                            <code>{formatPrice(r.cacheWritePrice)}</code>/1M. Cost
-                            = Σ(tokens ÷ 1e6 × price) per class.
+                            <code>{formatPrice(r.cacheWritePrice)}</code>/1M.{" "}
+                            {"Cost = Σ(tokens ÷ 1e6 × price) per class."}
                           </p>
                         )}
                       </div>
