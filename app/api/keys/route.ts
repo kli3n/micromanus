@@ -27,7 +27,7 @@ import { toKeyMetadata } from "@/lib/keys/metadata";
 // but is included in the enum so we return the designed "arrives soon" copy
 // rather than a generic validation error.
 const bodySchema = z.object({
-  provider: z.enum(["openai", "kimi", "custom", "anthropic"]),
+  provider: z.enum(["openai", "kimi", "custom", "anthropic", "openrouter"]),
   base_url: z.url(),
   apiKey: z.string().min(1),
 });

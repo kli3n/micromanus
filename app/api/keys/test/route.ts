@@ -21,7 +21,7 @@ import { MODEL_REGISTRY } from "@/lib/registry";
  */
 
 const bodySchema = z.object({
-  provider: z.enum(["openai", "kimi", "custom", "anthropic"]),
+  provider: z.enum(["openai", "kimi", "custom", "anthropic", "openrouter"]),
   base_url: z.url(),
   apiKey: z.string().min(1),
   model: z.string().min(1).optional(),

@@ -23,6 +23,7 @@ const PROVIDER_OPTIONS: { value: Provider; label: string; disabled?: boolean }[]
   [
     { value: "openai", label: "OpenAI" },
     { value: "kimi", label: "Kimi / Moonshot" },
+    { value: "openrouter", label: "OpenRouter" },
     { value: "custom", label: "Custom (OpenAI-compatible)" },
     { value: "anthropic", label: "Anthropic (Claude) · arrives soon", disabled: true },
   ];
@@ -30,6 +31,7 @@ const PROVIDER_OPTIONS: { value: Provider; label: string; disabled?: boolean }[]
 const PROVIDER_TITLE: Record<string, string> = {
   openai: "OpenAI",
   kimi: "Kimi / Moonshot",
+  openrouter: "OpenRouter",
   custom: "Custom",
   anthropic: "Anthropic",
 };
