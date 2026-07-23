@@ -9,19 +9,22 @@
  *   2. A fresh user at balance 0 has a single debit_credit() reject with
  *      'insufficient_credits'.
  *
- * The RPC takes no user argument — identity is auth.uid() inside the function,
- * matching the migration's design. This mirrors the ephemeral-user + user-client
- * helper shape used by scripts/rls-probe.ts (kept self-contained so each probe
- * runs standalone via `node`).
+ * The debit_credit RPC takes no user argument — identity is auth.uid() inside the
+ * function. Scenario 3 (added in Plan 02-01) exercises the service_role-only
+ * start_run(p_user_id, p_chat_id, p_model_id) RPC from migration 0002, which takes
+ * an explicit p_user_id (OQ-4) and performs the same FOR UPDATE debit while opening
+ * a run. This mirrors the ephemeral-user + user-client helper shape used by
+ * scripts/rls-probe.ts (kept self-contained so each probe runs standalone via `node`).
  *
  * Run: `npm run test:money`.
  * Requires env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY.
- * DEFERRED: cannot pass until Plan 01-02 provisions the project + applies the
- * migration. Exits non-zero on any violation; cleans up in finally.
+ * Exits non-zero on any violation; cleans up in finally.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const PARALLEL_DEBITS = 5;
+const PARALLEL_RUNS = 5;
+const MODEL = 'gpt-5.6-luna';
 
 function requireEnv(...names: string[]): string {
   for (const n of names) {
@@ -94,10 +97,20 @@ function assert(cond: boolean, msg: string): void {
 const isInsufficient = (msg: string | undefined): boolean =>
   (msg ?? '').toLowerCase().includes('insufficient_credits');
 
+async function runsCount(admin: SupabaseClient, userId: string): Promise<number> {
+  const { data, error } = await admin
+    .from('runs')
+    .select('id')
+    .eq('user_id', userId);
+  if (error) throw new Error(`runsCount failed: ${error.message}`);
+  return (data ?? []).length;
+}
+
 async function main(): Promise<void> {
   const admin = adminClient();
   let uConcurrent: { id: string; email: string; password: string } | null = null;
   let uZero: { id: string; email: string; password: string } | null = null;
+  let uStartRun: { id: string; email: string; password: string } | null = null;
 
   try {
     // ---- Scenario 1: N parallel debits at balance 1 -> exactly one wins ----
@@ -156,8 +169,67 @@ async function main(): Promise<void> {
     );
     const zeroBalance = await balanceOf(admin, uZero.id);
     assert(zeroBalance === 0, `balance-0 user still at 0 after rejected debit (got ${zeroBalance})`);
+
+    // ---- Scenario 3: N parallel start_run() at balance 1 -> exactly one wins ----
+    // start_run is service_role-only and debits -1 while opening a run (0002).
+    uStartRun = await makeUser(admin, 'startrun');
+    const seedRun = await admin
+      .from('credits_ledger')
+      .insert({ user_id: uStartRun.id, delta: 1, reason: 'refund', ref_id: `seed-${uStartRun.id}` });
+    if (seedRun.error) throw new Error(`seed start_run balance=1 failed: ${seedRun.error.message}`);
+
+    const chat = await admin
+      .from('chats')
+      .insert({ user_id: uStartRun.id, model_id: MODEL, title: 'start_run-probe' })
+      .select('id')
+      .single();
+    if (chat.error) throw new Error(`insert chat failed: ${chat.error.message}`);
+    const chatId = (chat.data as { id: string }).id;
+
+    const runResults = await Promise.allSettled(
+      Array.from({ length: PARALLEL_RUNS }, () =>
+        admin.rpc('start_run', {
+          p_user_id: uStartRun!.id,
+          p_chat_id: chatId,
+          p_model_id: MODEL,
+        }),
+      ),
+    );
+
+    let runSuccess = 0;
+    let runInsufficient = 0;
+    let runOther = 0;
+    for (const r of runResults) {
+      if (r.status === 'rejected') {
+        runOther++;
+        continue;
+      }
+      const { data, error } = r.value;
+      if (!error) {
+        runSuccess++;
+        assert(typeof data === 'string' && data.length > 0, `winning start_run returned a run uuid (got ${JSON.stringify(data)})`);
+      } else if (isInsufficient(error.message)) {
+        runInsufficient++;
+      } else {
+        runOther++;
+        console.error(`  unexpected start_run error: ${error.message}`);
+      }
+    }
+
+    console.log(`concurrent start_run @ balance 1 (N=${PARALLEL_RUNS}):`);
+    assert(runSuccess === 1, `exactly one start_run succeeded (got ${runSuccess})`);
+    assert(
+      runInsufficient === PARALLEL_RUNS - 1,
+      `the other ${PARALLEL_RUNS - 1} rejected with insufficient_credits (got ${runInsufficient})`,
+    );
+    assert(runOther === 0, `no unexpected start_run errors (got ${runOther})`);
+
+    const runBalance = await balanceOf(admin, uStartRun.id);
+    assert(runBalance === 0, `final SUM(delta) is 0, never negative (got ${runBalance})`);
+    const runRows = await runsCount(admin, uStartRun.id);
+    assert(runRows === 1, `exactly one runs row exists for the user (got ${runRows})`);
   } finally {
-    for (const u of [uConcurrent, uZero]) {
+    for (const u of [uConcurrent, uZero, uStartRun]) {
       if (u) {
         const { error } = await admin.auth.admin.deleteUser(u.id);
         if (error) console.error(`cleanup: deleteUser(${u.id}) failed: ${error.message}`);
@@ -171,7 +243,7 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  console.log('\nDEBIT REGRESSION PASSED: no double-spend under concurrency; zero-balance debit rejected.');
+  console.log('\nDEBIT REGRESSION PASSED: no double-spend under concurrency (debit_credit + start_run); zero-balance debit rejected.');
 }
 
 main().catch((err: unknown) => {
