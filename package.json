@@ -15,13 +15,19 @@
     "test:guard": "node --env-file-if-exists=.env.local scripts/auth-guard.test.ts"
   },
   "dependencies": {
+    "@mozilla/readability": "0.6.0",
     "@sparticuz/chromium": "149.0.0",
     "@supabase/ssr": "0.12.3",
     "@supabase/supabase-js": "2.110.7",
+    "@vercel/functions": "3.7.5",
+    "linkedom": "0.18.13",
     "next": "16.2.10",
+    "openai": "6.48.0",
     "puppeteer-core": "^25",
     "react": "^19",
     "react-dom": "^19",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
