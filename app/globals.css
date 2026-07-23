@@ -107,3 +107,23 @@ body {
     animation: none;
   }
 }
+@keyframes agent-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Tool-status running spinner (CHAT-06). Compositor-only transform animation. */
+.agent-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--accent-line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: agent-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-spinner {
+    animation: none;
+  }
+}

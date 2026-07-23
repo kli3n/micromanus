@@ -79,6 +79,110 @@ function SendIcon() {
   );
 }
 
+function CheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-[14px] w-[14px]"
+      aria-hidden="true"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+/**
+ * A single live/persisted tool-status line (CHAT-06 / D-29). Payload shape is
+ * emitted by the loop's `tool_status` SSE event AND persisted as the JSON content
+ * of a role='tool' message row, so the live and reopened renders are identical.
+ */
+export interface ToolStatusEntry {
+  id: string;
+  tool: string; // "web_search" | "fetch_page"
+  state: string; // "running" | "done"
+  query?: string;
+  url?: string;
+  domain?: string;
+  resultCount?: number;
+  tokensApprox?: number;
+  note?: string;
+}
+
+function toolLineParts(t: ToolStatusEntry): { label: string; text: string; meta: string } {
+  const running = t.state !== "done";
+  if (t.tool === "web_search") {
+    return {
+      label: running ? "Searching the web" : "Searched the web",
+      text: t.query ? ` · "${t.query}"` : "",
+      meta: t.note
+        ? t.note
+        : running
+          ? "searching…"
+          : `SerpAPI · ${t.resultCount ?? 0} results`,
+    };
+  }
+  if (t.tool === "fetch_page") {
+    return {
+      label: running ? "Reading page" : "Read page",
+      text: running ? (t.url ? ` · ${t.url}` : "") : t.domain ? ` · ${t.domain}` : "",
+      meta: t.note
+        ? t.note
+        : running
+          ? "fetching…"
+          : `${(t.tokensApprox ?? 0).toLocaleString()} tok`,
+    };
+  }
+  return { label: "Tool", text: "", meta: running ? "…" : "done" };
+}
+
+function ToolStatusLine({ t }: { t: ToolStatusEntry }) {
+  const running = t.state !== "done";
+  const { label, text, meta } = toolLineParts(t);
+  return (
+    <div className="flex items-center gap-[10px] py-[6px] pl-[14px] text-[12.5px] text-[var(--text-2)]">
+      <span className="grid h-4 w-4 flex-none place-items-center">
+        {running ? (
+          <span className="agent-spinner" aria-hidden="true" />
+        ) : (
+          <span className="text-[var(--success)]">
+            <CheckIcon />
+          </span>
+        )}
+      </span>
+      <span className="min-w-0 flex-1 truncate">
+        <b className="font-semibold text-[var(--text)]">{label}</b>
+        <span>{text}</span>
+      </span>
+      <span
+        className="ml-auto flex-none text-[10.5px] text-[var(--text-3)]"
+        style={{ fontFamily: "var(--mono)" }}
+      >
+        {meta}
+      </span>
+    </div>
+  );
+}
+
+function ToolStatusGroup({ tools }: { tools: ToolStatusEntry[] }) {
+  if (tools.length === 0) return null;
+  return (
+    <div
+      className="my-[2px] flex flex-col border-l-2 border-[var(--border-strong)]"
+      role="status"
+      aria-live="polite"
+    >
+      {tools.map((t) => (
+        <ToolStatusLine key={t.id} t={t} />
+      ))}
+    </div>
+  );
+}
+
 export function ChatThread({
   chatId,
   initialMessages,
@@ -92,6 +196,9 @@ export function ChatThread({
   const [balance, setBalance] = useState(initialBalance);
   const [input, setInput] = useState("");
   const [streamingId, setStreamingId] = useState<string | null>(null);
+  // Live tool-status lines keyed by the streaming assistant message id (CHAT-06).
+  // The reopened tab renders persisted role='tool' rows instead (D-25 parity).
+  const [toolsByMsg, setToolsByMsg] = useState<Record<string, ToolStatusEntry[]>>({});
   const streamingRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -199,6 +306,18 @@ export function ChatThread({
           content: m.content + ((data.delta as string) ?? ""),
         }));
         break;
+      case "tool_status": {
+        const p = data as unknown as ToolStatusEntry;
+        if (!p.id) break;
+        setToolsByMsg((prev) => {
+          const list = prev[assistantId] ?? [];
+          const idx = list.findIndex((t) => t.id === p.id);
+          const next =
+            idx >= 0 ? list.map((t) => (t.id === p.id ? p : t)) : [...list, p];
+          return { ...prev, [assistantId]: next };
+        });
+        break;
+      }
       case "usage":
         break; // recorded server-side; no UI this phase
       case "done":
@@ -288,35 +407,55 @@ export function ChatThread({
         )}
         <div className="flex flex-col gap-4">
           {messages.map((m) => {
+            // Persisted tool-status row (reopened tab, D-25) — render the same
+            // tool-status line as the live SSE `tool_status` event.
+            if (m.role === "tool") {
+              let entry: ToolStatusEntry | null = null;
+              try {
+                entry = JSON.parse(m.content) as ToolStatusEntry;
+              } catch {
+                entry = null;
+              }
+              if (!entry) return null;
+              return (
+                <div key={m.id} className="flex justify-start">
+                  <div className="w-full max-w-[92%]">
+                    <ToolStatusGroup tools={[{ ...entry, id: entry.id || m.id }]} />
+                  </div>
+                </div>
+              );
+            }
+
             const isUser = m.role === "user";
             const isStreaming = m.id === streamingId;
+            const liveTools = toolsByMsg[m.id] ?? [];
             return (
               <div
                 key={m.id}
-                className={
-                  isUser ? "flex justify-end" : "flex justify-start"
-                }
+                className={isUser ? "flex justify-end" : "flex justify-start"}
               >
-                <div
-                  className={
-                    isUser
-                      ? "max-w-[80%] rounded-[var(--radius)] bg-[var(--accent)] px-[14px] py-[10px] text-[14px] leading-[1.55] text-white"
-                      : "max-w-[92%] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[14px] leading-[1.6] text-[var(--text)]"
-                  }
-                >
-                  {isUser ? (
+                {isUser ? (
+                  <div className="max-w-[80%] rounded-[var(--radius)] bg-[var(--accent)] px-[14px] py-[10px] text-[14px] leading-[1.55] text-white">
                     <span className="whitespace-pre-wrap">{m.content}</span>
-                  ) : (
-                    <div className="chat-markdown prose-sm">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {m.content}
-                      </ReactMarkdown>
-                      {isStreaming && (
-                        <span className="streaming-cursor" aria-hidden="true" />
-                      )}
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="flex w-full max-w-[92%] flex-col gap-1">
+                    {/* Live tool-status lines for the initiating tab (CHAT-06). */}
+                    <ToolStatusGroup tools={liveTools} />
+                    {(m.content.length > 0 || isStreaming) && (
+                      <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[14px] leading-[1.6] text-[var(--text)]">
+                        <div className="chat-markdown prose-sm">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {m.content}
+                          </ReactMarkdown>
+                          {isStreaming && (
+                            <span className="streaming-cursor" aria-hidden="true" />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
