@@ -336,6 +336,8 @@ export default async function StatsPage() {
     else runsByChat.set(run.chat_id, [agg]);
   }
 
+  const hasUsage = usage.length > 0;
+
   const tiles: { label: string; value: string; sub: string; accent?: boolean }[] =
     [
       {
@@ -380,21 +382,54 @@ export default async function StatsPage() {
         chat to see its per-run breakdown and the exact per-1M prices used.
       </p>
 
-      {/* Grand-total stat strip (STAT-03) — 5 tiles: spend + all four classes. */}
-      <div className="stats-strip">
-        {tiles.map((t) => (
-          <div key={t.label} className="stats-tile">
-            <div className="stats-tile-label">{t.label}</div>
-            <div className={`stats-tile-value${t.accent ? " accent" : ""}`}>
-              {t.value}
-            </div>
-            <div className="stats-tile-sub">{t.sub}</div>
+      {!hasUsage ? (
+        /* Designed empty state (UX-02) — never a blank table/canvas. */
+        <div className="mx-auto mt-6 max-w-[460px] text-center">
+          <div
+            aria-hidden="true"
+            className="mx-auto mb-[22px] grid h-16 w-16 place-items-center rounded-[18px] border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]"
+            style={{ boxShadow: "var(--shadow)" }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-[30px] w-[30px]"
+            >
+              <path d="M3 3v18h18" />
+              <path d="m19 9-5 5-4-4-3 3" />
+            </svg>
           </div>
-        ))}
-      </div>
+          <h2 className="mb-[10px] text-[22px] tracking-[-0.02em]">
+            No usage yet
+          </h2>
+          <p className="text-[14.5px] leading-[1.6] text-[var(--text-2)]">
+            Run your first research question and its metered cost will appear
+            here — broken down by token class, with the exact per-1M prices used.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Grand-total stat strip (STAT-03) — 5 tiles: spend + all four classes. */}
+          <div className="stats-strip">
+            {tiles.map((t) => (
+              <div key={t.label} className="stats-tile">
+                <div className="stats-tile-label">{t.label}</div>
+                <div
+                  className={`stats-tile-value${t.accent ? " accent" : ""}`}
+                >
+                  {t.value}
+                </div>
+                <div className="stats-tile-sub">{t.sub}</div>
+              </div>
+            ))}
+          </div>
 
-      {/* Per-chat cost table (STAT-02) — CSS grid, header + one row per chat. */}
-      <div className="stats-scroll">
+          {/* Per-chat cost table (STAT-02) — CSS grid, header + one row per chat. */}
+          <div className="stats-scroll">
         <div className="stats-table">
           <div className="stats-thead">
             <span>Chat</span>
@@ -493,11 +528,13 @@ export default async function StatsPage() {
               </details>
             );
           })}
-        </div>
-      </div>
-      <p className="mt-[14px] text-[11.5px] leading-[1.6] text-[var(--text-3)]">
-        Click any chat row to expand its per-run drill-down.
-      </p>
+            </div>
+          </div>
+          <p className="mt-[14px] text-[11.5px] leading-[1.6] text-[var(--text-3)]">
+            Click any chat row to expand its per-run drill-down.
+          </p>
+        </>
+      )}
     </div>
   );
 }
