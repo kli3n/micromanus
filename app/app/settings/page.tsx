@@ -42,6 +42,17 @@ export default function SettingsPage() {
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [keys, setKeys] = useState<KeyMetadata[]>([]);
   const [loadingKeys, setLoadingKeys] = useState(true);
+  // KEY-02 verify-before-save gate: Save stays disabled until a successful
+  // 1-token probe for the CURRENT provider/base URL/key. Any change resets it.
+  const [verifyState, setVerifyState] = useState<
+    "idle" | "verifying" | "ok" | "fail"
+  >("idle");
+  const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
+
+  function resetVerify() {
+    setVerifyState("idle");
+    setVerifyMsg(null);
+  }
 
   async function refreshKeys() {
     try {
@@ -66,6 +77,40 @@ export default function SettingsPage() {
     setBaseUrl(DEFAULT_BASE_URLS[next]);
     setSaveError(null);
     setSavedMsg(null);
+    resetVerify();
+  }
+
+  async function onTest() {
+    if (apiKey.trim().length === 0) {
+      setVerifyState("fail");
+      setVerifyMsg("Enter a key first");
+      return;
+    }
+    setVerifyState("verifying");
+    setVerifyMsg("verifying… (1-token call)");
+    setSaveError(null);
+    setSavedMsg(null);
+    try {
+      const res = await fetch("/api/keys/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, base_url: baseUrl, apiKey }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        reason?: string;
+      };
+      if (res.ok && data.ok) {
+        setVerifyState("ok");
+        setVerifyMsg("✓ key works — model responded");
+      } else {
+        setVerifyState("fail");
+        setVerifyMsg(data.reason ?? "could not verify this key — try again");
+      }
+    } catch {
+      setVerifyState("fail");
+      setVerifyMsg("could not verify this key — try again");
+    }
   }
 
   async function onSave() {
@@ -87,6 +132,7 @@ export default function SettingsPage() {
         return;
       }
       setApiKey("");
+      resetVerify();
       setSavedMsg(`✓ saved — ${PROVIDER_TITLE[provider]} models unlocked below`);
       await refreshKeys();
     } catch {
@@ -96,7 +142,12 @@ export default function SettingsPage() {
     }
   }
 
-  const canSave = apiKey.trim().length > 0 && baseUrl.trim().length > 0 && !saving;
+  // KEY-02: Save is gated on a successful verify for the current key.
+  const canSave =
+    apiKey.trim().length > 0 &&
+    baseUrl.trim().length > 0 &&
+    verifyState === "ok" &&
+    !saving;
 
   return (
     <div className="mx-auto w-full max-w-[860px] self-start px-8 py-[34px]">
@@ -137,7 +188,10 @@ export default function SettingsPage() {
             <div className="flex h-[44px] items-center rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
               <input
                 value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
+                onChange={(e) => {
+                  setBaseUrl(e.target.value);
+                  resetVerify();
+                }}
                 spellCheck={false}
                 className="w-full border-0 bg-transparent font-[var(--mono)] text-[13.5px] text-[var(--text)] outline-none"
               />
@@ -150,7 +204,10 @@ export default function SettingsPage() {
           <div className="flex h-[44px] items-center gap-2 rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
             <input
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                resetVerify();
+              }}
               type="text"
               autoComplete="off"
               spellCheck={false}
@@ -164,6 +221,42 @@ export default function SettingsPage() {
         </div>
 
         <div className="mt-4 flex items-center gap-[10px]">
+          <button
+            type="button"
+            onClick={onTest}
+            disabled={verifyState === "verifying"}
+            className="flex h-9 items-center gap-[7px] rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-transparent px-3 text-[13.5px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-[15px] w-[15px]"
+            >
+              <path d="M9 12l2 2 4-4" />
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+            Test with 1 token
+          </button>
+          {verifyMsg && (
+            <span
+              role={verifyState === "fail" ? "alert" : undefined}
+              className="text-[12.5px]"
+              style={{
+                color:
+                  verifyState === "ok"
+                    ? "var(--success)"
+                    : verifyState === "fail"
+                      ? "var(--error)"
+                      : "var(--text-3)",
+              }}
+            >
+              {verifyMsg}
+            </span>
+          )}
           <button
             type="button"
             onClick={onSave}
