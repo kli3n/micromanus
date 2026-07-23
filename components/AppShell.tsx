@@ -1,24 +1,32 @@
 import { PdfTestButton } from "@/components/PdfTestButton";
+import { BalanceBadge } from "@/components/BalanceBadge";
+import { createClient } from "@/lib/supabase/server";
 
 /**
- * AppShell (D-02 / D-03) — the post-login stub of the eventual chat layout.
+ * AppShell (D-02 / D-03) — the live chat layout the (app) group renders around
+ * every authenticated page.
  *
- * Ports design/screens/app-shell.html verbatim (D-11: the mockup is the design
- * contract) into JSX with the same warm design tokens the landing page uses. It
- * renders:
- *   - the sidebar: brand mark, a DISABLED "New research chat" button with the
- *     "Soon" pill, the empty chat-list state, and the user card (avatar initials
- *     + display name + email) with the header sign-out control;
- *   - the topbar: workspace crumb, a DISABLED "Model" selector placeholder with
- *     a "Soon" pill (space Phase 2 fills), and a compact "Generate test PDF"
- *     button (PdfTestButton, D-12);
+ * Async server component. The (app) layout already enforced auth; this shell
+ * re-derives `userId` (getClaims -> getUser) to run two RLS-scoped reads that
+ * make the sidebar + topbar real (02-04 owns AppShell integration, wave 3):
+ *   - the caller's `chats` (id, title, created_at desc) for the chat list;
+ *   - balance = SUM(credits_ledger.delta) for the balance-aware new-chat button,
+ *     the 0-credit sidebar empty-state, and the always-visible topbar
+ *     <BalanceBadge> (PAY-04).
+ *
+ * Renders:
+ *   - sidebar: brand mark; an ENABLED "New research chat" -> /app/c/new (disabled
+ *     with a "0 credits" hint at 0 balance, CHAT-01); a nav-mini (Settings & keys
+ *     -> /app/settings, Cost & usage -> /app/stats) so those routes are reachable
+ *     from every authenticated screen; the chat list linking each chat to
+ *     /app/c/[chatId] (CHAT-02/03) with the balance-branched empty-state; and the
+ *     user card + sign-out;
+ *   - topbar: workspace crumb, the topbar <BalanceBadge> (PAY-04), the Model slot
+ *     (owned by 02-03/KEY-05 — left untouched), and PdfTestButton (D-12);
  *   - {children} in the canvas.
  *
- * Sign-out is a form that POSTs to /auth/signout — present on every
- * authenticated page because this shell wraps the whole (app) group in the
- * layout (D-03). The chat + model controls are non-functional placeholders this
- * phase; Phase 2 builds INTO this shell (D-02). This is a server component; the
- * only interactive island is the client PdfTestButton.
+ * Canonical paths only: /app/c/[chatId], /app/settings, /app/stats (D-11 — never
+ * /app/chat/[id]). Sign-out POSTs to /auth/signout on every authenticated page.
  */
 
 function initials(name: string): string {
@@ -28,7 +36,12 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export function AppShell({
+interface ChatListItem {
+  id: string;
+  title: string | null;
+}
+
+export async function AppShell({
   displayName,
   email,
   children,
@@ -37,6 +50,43 @@ export function AppShell({
   email: string;
   children: React.ReactNode;
 }) {
+  const supabase = await createClient();
+
+  const supabaseAuth = supabase.auth as typeof supabase.auth & {
+    getClaims?: () => Promise<{
+      data: { claims?: { sub?: string } } | null;
+    }>;
+  };
+  let userId: string | undefined;
+  if (typeof supabaseAuth.getClaims === "function") {
+    const { data } = await supabaseAuth.getClaims();
+    userId = data?.claims?.sub;
+  } else {
+    const { data } = await supabase.auth.getUser();
+    userId = data.user?.id;
+  }
+
+  let chats: ChatListItem[] = [];
+  let balance = 0;
+  if (userId) {
+    const { data: chatRows } = await supabase
+      .from("chats")
+      .select("id, title, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+    chats = (chatRows ?? []).map((c) => ({
+      id: c.id as string,
+      title: (c.title as string | null) ?? null,
+    }));
+
+    const { data: ledgerRows } = await supabase
+      .from("credits_ledger")
+      .select("delta")
+      .eq("user_id", userId);
+    balance = (ledgerRows ?? []).reduce((sum, r) => sum + (r.delta ?? 0), 0);
+  }
+  const hasCredits = balance > 0;
+
   return (
     <div className="grid h-screen grid-cols-[264px_1fr]">
       {/* ---- Sidebar ---- */}
@@ -68,49 +118,127 @@ export function AppShell({
           </span>
         </div>
 
-        <button
-          type="button"
-          disabled
-          className="flex h-[40px] w-full cursor-not-allowed items-center gap-[9px] rounded-[var(--radius)] border border-dashed border-[var(--border-strong)] bg-transparent px-3 text-[13.5px] font-[550] text-[var(--text-2)] opacity-[.85]"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4"
+        {hasCredits ? (
+          <a
+            href="/app/c/new"
+            className="flex h-[40px] w-full items-center gap-[9px] rounded-[var(--radius)] border border-[var(--accent)] bg-[var(--accent)] px-3 text-[13.5px] font-[600] text-white transition-colors hover:bg-[var(--accent-hover)]"
+            style={{ boxShadow: "0 2px 8px rgba(194,65,12,.22)" }}
           >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          New research chat
-          <span className="ml-auto rounded-[20px] bg-[var(--surface-3)] px-[6px] py-[2px] text-[10px] font-[600] tracking-[.02em] text-[var(--text-3)]">
-            Soon
-          </span>
-        </button>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New research chat
+          </a>
+        ) : (
+          <button
+            type="button"
+            disabled
+            title="Redeem a credit to start a research chat"
+            className="flex h-[40px] w-full cursor-not-allowed items-center gap-[9px] rounded-[var(--radius)] border border-dashed border-[var(--border-strong)] bg-transparent px-3 text-[13.5px] font-[550] text-[var(--text-2)] opacity-[.85]"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New research chat
+            <span className="ml-auto rounded-[20px] bg-[var(--surface-3)] px-[6px] py-[2px] text-[10px] font-[600] tracking-[.02em] text-[var(--text-3)]">
+              0 credits
+            </span>
+          </button>
+        )}
+
+        {/* Nav-mini (UI-SPEC Component Inventory) — keeps Settings + Stats
+            reachable from every authenticated screen. */}
+        <nav className="mt-3 flex flex-col gap-0.5">
+          <a
+            href="/app/settings"
+            className="flex items-center gap-[9px] rounded-[var(--radius-sm)] px-3 py-[7px] text-[13px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--accent)]"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-[15px] w-[15px]"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+            </svg>
+            Settings &amp; keys
+          </a>
+          <a
+            href="/app/stats"
+            className="flex items-center gap-[9px] rounded-[var(--radius-sm)] px-3 py-[7px] text-[13px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--accent)]"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-[15px] w-[15px]"
+            >
+              <path d="M3 3v18h18" />
+              <path d="m19 9-5 5-4-4-3 3" />
+            </svg>
+            Cost &amp; usage
+          </a>
+        </nav>
 
         <div className="p-[20px_10px_8px] text-[11px] font-[600] uppercase tracking-[.06em] text-[var(--text-3)]">
           Chats
         </div>
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-[var(--text-3)]">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-[26px] w-[26px] opacity-50"
-          >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          <p className="m-0 text-[12.5px] leading-[1.5]">
-            No chats yet.
-            <br />
-            Your research history will live here.
-          </p>
-        </div>
+        {chats.length > 0 ? (
+          <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-1">
+            {chats.map((c) => (
+              <a
+                key={c.id}
+                href={`/app/c/${c.id}`}
+                className="overflow-hidden text-ellipsis whitespace-nowrap rounded-[var(--radius-sm)] px-3 py-[8px] text-[13px] font-[500] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text)]"
+                title={c.title ?? "Untitled chat"}
+              >
+                {c.title ?? "Untitled chat"}
+              </a>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-[var(--text-3)]">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-[26px] w-[26px] opacity-50"
+            >
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <p className="m-0 text-[12.5px] leading-[1.5]">
+              {hasCredits
+                ? "No chats yet. Your research history will live here."
+                : "Redeem a credit to start your first research run."}
+            </p>
+          </div>
+        )}
 
         <div className="mt-2 flex items-center gap-[10px] border-t border-[var(--border)] p-[10px]">
           <span
@@ -163,6 +291,8 @@ export function AppShell({
             </span>
           </div>
           <div className="flex-1" />
+          {/* Always-visible balance (PAY-04). Distinct from the Model slot. */}
+          <BalanceBadge balance={balance} />
           <div
             title="Model selection arrives in the next update"
             className="flex h-9 cursor-not-allowed items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[13px] font-[550] text-[var(--text-3)]"

@@ -80,3 +80,30 @@ body {
     animation: none;
   }
 }
+
+/* Streaming answer cursor (CHAT-05). Compositor-only opacity blink on the
+   actively-streaming assistant message; disabled under reduced-motion per
+   design/BROWSER-DESIGN.md. Ported from demos §03. */
+@keyframes cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: cursor-blink 1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .streaming-cursor {
+    animation: none;
+  }
+}
