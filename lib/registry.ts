@@ -149,15 +149,57 @@ export const MODEL_REGISTRY: ModelSpec[] = [
   },
 
   // ---- OpenRouter — openai-compat (base URL https://openrouter.ai/api/v1) ----
-  // A FREE model, so all four per-1M prices are 0 (never null) — it prices to a
-  // NaN-safe $0 through lib/pricing.ts. NOTE: OpenRouter rotates its ":free"
-  // model ids and retires them over time, so this exact id may need updating if
-  // the model is dropped. The wiring (provider seam + base URL) is what is
-  // permanent here — not this specific id.
+  // All are FREE models, so all four per-1M prices are 0 (never null) — each
+  // prices to a NaN-safe $0 through lib/pricing.ts.
+  //
+  // NOTE ON ":free" IDS:
+  //   (1) OpenRouter rotates its ":free" model ids and retires them over time,
+  //       so treat these as CONFIG, not verified constants — the wiring (provider
+  //       seam + base URL) is what is permanent, not any specific id.
+  //   (2) These exact ids could NOT be verified live in this slice — confirm or
+  //       swap them against https://openrouter.ai/models before relying on one.
+  //   (3) DeepSeek V3.1, Qwen3 235B, and Mistral Small 3.2 are the ones EXPECTED
+  //       to support OpenAI-style tool calling for the web_search / fetch_page
+  //       agent loop; DeepSeek V3.1 is the recommended agent-loop candidate.
+  //       Ling 3.0 Flash is retained as a lightweight free fallback. (The retired
+  //       llama-3.3-70b-instruct:free id from the 2026-07-24 debug is NOT re-added.)
   {
     id: "inclusionai/ling-3.0-flash:free",
     provider: "openrouter",
     label: "Ling 3.0 Flash (free · OpenRouter)",
+    inputPer1M: 0,
+    outputPer1M: 0,
+    cacheReadPer1M: 0,
+    cacheWritePer1M: 0,
+    contextTokens: null,
+    selectable: true,
+  },
+  {
+    id: "deepseek/deepseek-chat-v3.1:free",
+    provider: "openrouter",
+    label: "DeepSeek V3.1 (free · OpenRouter)",
+    inputPer1M: 0,
+    outputPer1M: 0,
+    cacheReadPer1M: 0,
+    cacheWritePer1M: 0,
+    contextTokens: null,
+    selectable: true,
+  },
+  {
+    id: "qwen/qwen3-235b-a22b:free",
+    provider: "openrouter",
+    label: "Qwen3 235B (free · OpenRouter)",
+    inputPer1M: 0,
+    outputPer1M: 0,
+    cacheReadPer1M: 0,
+    cacheWritePer1M: 0,
+    contextTokens: null,
+    selectable: true,
+  },
+  {
+    id: "mistralai/mistral-small-3.2-24b-instruct:free",
+    provider: "openrouter",
+    label: "Mistral Small 3.2 (free · OpenRouter)",
     inputPer1M: 0,
     outputPer1M: 0,
     cacheReadPer1M: 0,

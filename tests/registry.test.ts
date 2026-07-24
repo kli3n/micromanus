@@ -88,6 +88,29 @@ describe("OpenRouter provider (KEY-04 / KEY-01 / STAT-01)", () => {
     }
   });
 
+  it("marks EVERY openrouter model free (four 0 prices) and selectable", () => {
+    expect(openrouterModels.length).toBeGreaterThanOrEqual(1);
+    for (const m of openrouterModels) {
+      expect(m.inputPer1M, `${m.id} inputPer1M`).toBe(0);
+      expect(m.outputPer1M, `${m.id} outputPer1M`).toBe(0);
+      expect(m.cacheReadPer1M, `${m.id} cacheReadPer1M`).toBe(0);
+      expect(m.cacheWritePer1M, `${m.id} cacheWritePer1M`).toBe(0);
+      expect(m.selectable, `${m.id} selectable`).toBe(true);
+    }
+  });
+
+  it("registers at least 3 selectable free OpenRouter models (ids not pinned — they rotate)", () => {
+    const selectableFree = openrouterModels.filter(
+      (m) =>
+        m.selectable &&
+        m.inputPer1M === 0 &&
+        m.outputPer1M === 0 &&
+        m.cacheReadPer1M === 0 &&
+        m.cacheWritePer1M === 0,
+    );
+    expect(selectableFree.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("buildRegistryView: every openrouter row is selectable and unlocked with a saved key", () => {
     const rows = buildRegistryView(openrouterModels, ["openrouter"]);
     expect(rows.length).toBeGreaterThanOrEqual(1);
