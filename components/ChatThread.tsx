@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { createClient } from "@/lib/supabase/client";
+import { getModel } from "@/lib/registry";
 import { BalanceBadge } from "@/components/BalanceBadge";
 
 /**
@@ -183,6 +184,122 @@ function ToolStatusGroup({ tools }: { tools: ToolStatusEntry[] }) {
   );
 }
 
+/**
+ * SaturationNotice (saturation-fallback) — inline chooser rendered under the
+ * assistant bubble when the model provider returns a 429 ("upstream saturated").
+ * It offers the next-priority free OpenRouter model(s) and auto-switches on a 10s
+ * countdown. Motion is compositor-only (a scaleX bar via transform), respects
+ * prefers-reduced-motion, uses design tokens only, and reserves space (fixed
+ * min-height + tabular-nums digits) so the ticking countdown causes no CLS.
+ */
+function SaturationNotice({
+  saturatedModelId,
+  fallback,
+  onSwitch,
+  onCancel,
+}: {
+  saturatedModelId: string;
+  fallback: string[];
+  onSwitch: (chosenModelId: string) => void;
+  onCancel: () => void;
+}) {
+  const [selected, setSelected] = useState(fallback[0] ?? "");
+  const [secondsLeft, setSecondsLeft] = useState(10);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const firedRef = useRef(false);
+
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const fire = useCallback(
+    (id: string) => {
+      if (firedRef.current) return;
+      firedRef.current = true;
+      onSwitch(id);
+    },
+    [onSwitch],
+  );
+
+  // Local 1s countdown; cleared on unmount (cancel/switch both unmount).
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setSecondsLeft((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    if (secondsLeft === 0) fire(selectedRef.current);
+  }, [secondsLeft, fire]);
+
+  const satLabel = getModel(saturatedModelId)?.label ?? saturatedModelId;
+
+  return (
+    <div
+      role="alert"
+      className="flex min-h-[132px] flex-col gap-[10px] rounded-[var(--radius)] border border-[var(--warning-border)] bg-[var(--warning-soft)] px-[14px] py-[12px] text-[13px] text-[var(--text-2)]"
+    >
+      <div className="flex items-start gap-[8px] text-[var(--warning)]">
+        <span className="mt-[1px] flex-none">
+          <WarnIcon />
+        </span>
+        <span className="font-[550] leading-[1.5] text-[var(--text)]">
+          <b className="font-semibold">{satLabel}</b> is busy (upstream
+          saturated). Switching to the next free model in{" "}
+          <span style={{ fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums" }}>
+            {secondsLeft}s
+          </span>
+          …
+        </span>
+      </div>
+
+      {/* Compositor-only progress: scaleX transform, never width (no CLS/jank). */}
+      <div className="h-[3px] w-full overflow-hidden rounded-full bg-[var(--warning-border)]">
+        <div
+          className="h-full origin-left rounded-full bg-[var(--warning)]"
+          style={{
+            transform: `scaleX(${Math.max(0, secondsLeft) / 10})`,
+            transition: reduceMotion ? "none" : "transform 1s linear",
+            willChange: "transform",
+          }}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-[8px]">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          aria-label="Choose a fallback model"
+          className="min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[10px] py-[7px] text-[12.5px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+        >
+          {fallback.map((id) => (
+            <option key={id} value={id}>
+              {getModel(id)?.label ?? id}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => fire(selected)}
+          className="rounded-[var(--radius)] bg-[var(--accent)] px-[12px] py-[7px] text-[12.5px] font-[600] text-white transition-colors hover:bg-[var(--accent-hover)]"
+        >
+          Switch now
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[12px] py-[7px] text-[12.5px] font-[550] text-[var(--text-2)] transition-colors hover:text-[var(--text)]"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ChatThread({
   chatId,
   initialMessages,
@@ -199,7 +316,18 @@ export function ChatThread({
   // Live tool-status lines keyed by the streaming assistant message id (CHAT-06).
   // The reopened tab renders persisted role='tool' rows instead (D-25 parity).
   const [toolsByMsg, setToolsByMsg] = useState<Record<string, ToolStatusEntry[]>>({});
+  // Saturation-fallback chooser: set on a `rate_limited` SSE event with a
+  // non-empty fallback list; drives the inline SaturationNotice.
+  const [saturation, setSaturation] = useState<{
+    assistantId: string;
+    saturatedModelId: string;
+    fallback: string[];
+    lastUserText: string;
+  } | null>(null);
   const streamingRef = useRef(false);
+  // The last user question sent — reused verbatim when a saturation switch
+  // re-runs the same question on the fallback model (no re-typing).
+  const lastUserTextRef = useRef("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const canSend = balance > 0 && !!modelId;
@@ -320,6 +448,20 @@ export function ChatThread({
       }
       case "usage":
         break; // recorded server-side; no UI this phase
+      case "rate_limited": {
+        // Provider 429 ("upstream saturated"). Offer the priority-ordered free
+        // fallbacks; render the chooser only when at least one exists (the
+        // following `error` event still fills the bubble otherwise).
+        const fb = (data.fallback as string[]) ?? [];
+        if (fb.length === 0) break;
+        setSaturation({
+          assistantId,
+          saturatedModelId: String(data.saturatedModelId ?? ""),
+          fallback: fb,
+          lastUserText: lastUserTextRef.current,
+        });
+        break;
+      }
       case "done":
         if (data.status === "succeeded") setBalance((b) => Math.max(0, b - 1));
         break;
@@ -333,27 +475,34 @@ export function ChatThread({
     }
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text || !canSend || streamingRef.current) return;
-
-    const userMsgId = `local-u-${Date.now()}`;
-    const assistantId = `local-a-${Date.now()}`;
-    setInput("");
+  // The shared send path: owns the fetch-reader loop so both the initial send
+  // and a saturation fallback switch re-run through the same code. `switchModel`
+  // is the explicit opt-in that lets the route honor the chosen fallback model.
+  async function streamRun({
+    text,
+    assistantId,
+    modelId: runModelId,
+    switchModel,
+  }: {
+    text: string;
+    assistantId: string;
+    modelId: string;
+    switchModel?: boolean;
+  }) {
+    lastUserTextRef.current = text;
     streamingRef.current = true;
     setStreamingId(assistantId);
-    setMessages((prev) => [
-      ...prev,
-      { id: userMsgId, role: "user", content: text },
-      { id: assistantId, role: "assistant", content: "" },
-    ]);
 
     try {
       const res = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId: activeChatId, message: text, modelId }),
+        body: JSON.stringify({
+          chatId: activeChatId,
+          message: text,
+          modelId: runModelId,
+          ...(switchModel ? { switchModel: true } : {}),
+        }),
       });
       if (!res.ok || !res.body) {
         patchMessage(assistantId, (m) => ({
@@ -389,6 +538,44 @@ export function ChatThread({
       streamingRef.current = false;
       setStreamingId(null);
     }
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text || !canSend || streamingRef.current) return;
+
+    const userMsgId = `local-u-${Date.now()}`;
+    const assistantId = `local-a-${Date.now()}`;
+    setInput("");
+    setMessages((prev) => [
+      ...prev,
+      { id: userMsgId, role: "user", content: text },
+      { id: assistantId, role: "assistant", content: "" },
+    ]);
+
+    await streamRun({ text, assistantId, modelId: modelId as string });
+  }
+
+  // Re-run the SAME last question on the chosen fallback model. Removes the
+  // failed assistant bubble and appends one fresh empty bubble (no new user
+  // bubble — the question is unchanged). The saturated run was already refunded
+  // server-side; this fresh run debits its own credit (money stays correct).
+  function onSwitch(chosenModelId: string) {
+    const sat = saturation;
+    if (!sat) return;
+    setSaturation(null);
+    const newAssistantId = `local-a-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev.filter((m) => m.id !== sat.assistantId),
+      { id: newAssistantId, role: "assistant", content: "" },
+    ]);
+    void streamRun({
+      text: sat.lastUserText,
+      assistantId: newAssistantId,
+      modelId: chosenModelId,
+      switchModel: true,
+    });
   }
 
   const showEmpty = messages.length === 0;
@@ -453,6 +640,14 @@ export function ChatThread({
                           )}
                         </div>
                       </div>
+                    )}
+                    {saturation?.assistantId === m.id && (
+                      <SaturationNotice
+                        saturatedModelId={saturation.saturatedModelId}
+                        fallback={saturation.fallback}
+                        onSwitch={onSwitch}
+                        onCancel={() => setSaturation(null)}
+                      />
                     )}
                   </div>
                 )}
