@@ -156,13 +156,13 @@ export const MODEL_REGISTRY: ModelSpec[] = [
   //   (1) OpenRouter rotates its ":free" model ids and retires them over time,
   //       so treat these as CONFIG, not verified constants — the wiring (provider
   //       seam + base URL) is what is permanent, not any specific id.
-  //   (2) These exact ids could NOT be verified live in this slice — confirm or
-  //       swap them against https://openrouter.ai/models before relying on one.
-  //   (3) DeepSeek V3.1, Qwen3 235B, and Mistral Small 3.2 are the ones EXPECTED
-  //       to support OpenAI-style tool calling for the web_search / fetch_page
-  //       agent loop; DeepSeek V3.1 is the recommended agent-loop candidate.
-  //       Ling 3.0 Flash is retained as a lightweight free fallback. (The retired
-  //       llama-3.3-70b-instruct:free id from the 2026-07-24 debug is NOT re-added.)
+  //   (2) The six ids below are a CURATED, verified free + tool-capable set listed
+  //       in saturation-fallback PRIORITY ORDER (see OPENROUTER_FREE_FALLBACK).
+  //       When one is saturated (429 "upstream saturated"), the agent loop offers
+  //       the next id in this list — so order is the contract, not a nicety.
+  //       Re-confirm against https://openrouter.ai/models if a free id is retired.
+  //       (The three unverified guesses — DeepSeek V3.1, Qwen3 235B, Mistral Small
+  //       3.2 — and the retired llama-3.3-70b-instruct:free are intentionally gone.)
   {
     id: "inclusionai/ling-3.0-flash:free",
     provider: "openrouter",
@@ -175,9 +175,9 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     selectable: true,
   },
   {
-    id: "deepseek/deepseek-chat-v3.1:free",
+    id: "nvidia/nemotron-3-ultra-550b-a55b:free",
     provider: "openrouter",
-    label: "DeepSeek V3.1 (free · OpenRouter)",
+    label: "Nemotron 3 Ultra 550B (free · OpenRouter)",
     inputPer1M: 0,
     outputPer1M: 0,
     cacheReadPer1M: 0,
@@ -186,9 +186,9 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     selectable: true,
   },
   {
-    id: "qwen/qwen3-235b-a22b:free",
+    id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     provider: "openrouter",
-    label: "Qwen3 235B (free · OpenRouter)",
+    label: "Nemotron 3 Nano Omni 30B (free · OpenRouter)",
     inputPer1M: 0,
     outputPer1M: 0,
     cacheReadPer1M: 0,
@@ -197,9 +197,9 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     selectable: true,
   },
   {
-    id: "mistralai/mistral-small-3.2-24b-instruct:free",
+    id: "poolside/laguna-s-2.1:free",
     provider: "openrouter",
-    label: "Mistral Small 3.2 (free · OpenRouter)",
+    label: "Laguna S 2.1 (free · OpenRouter)",
     inputPer1M: 0,
     outputPer1M: 0,
     cacheReadPer1M: 0,
@@ -207,6 +207,46 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     contextTokens: null,
     selectable: true,
   },
+  {
+    id: "cohere/north-mini-code:free",
+    provider: "openrouter",
+    label: "North Mini Code (free · OpenRouter)",
+    inputPer1M: 0,
+    outputPer1M: 0,
+    cacheReadPer1M: 0,
+    cacheWritePer1M: 0,
+    contextTokens: null,
+    selectable: true,
+  },
+  {
+    id: "poolside/laguna-xs-2.1:free",
+    provider: "openrouter",
+    label: "Laguna XS 2.1 (free · OpenRouter)",
+    inputPer1M: 0,
+    outputPer1M: 0,
+    cacheReadPer1M: 0,
+    cacheWritePer1M: 0,
+    contextTokens: null,
+    selectable: true,
+  },
+];
+
+/**
+ * OPENROUTER_FREE_FALLBACK — the single shared saturation-fallback priority list.
+ *
+ * The server (lib/agent/loop.ts) slices the ids AFTER the saturated one to build
+ * the `rate_limited` SSE fallback set; the client (components/ChatThread.tsx)
+ * defaults its chooser to `OPENROUTER_FREE_FALLBACK[0]`. Kept as an explicit
+ * string-literal array (NOT derived from MODEL_REGISTRY) so the tests pin it as a
+ * contract; its order MUST equal the openrouter entry order in MODEL_REGISTRY.
+ */
+export const OPENROUTER_FREE_FALLBACK: string[] = [
+  "inclusionai/ling-3.0-flash:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "poolside/laguna-s-2.1:free",
+  "cohere/north-mini-code:free",
+  "poolside/laguna-xs-2.1:free",
 ];
 
 const REGISTRY_BY_ID: Map<string, ModelSpec> = new Map(

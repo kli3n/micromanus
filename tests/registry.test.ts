@@ -3,6 +3,7 @@ import {
   DEFAULT_BASE_URLS,
   getModel,
   MODEL_REGISTRY,
+  OPENROUTER_FREE_FALLBACK,
   type ModelSpec,
 } from "@/lib/registry";
 import { buildRegistryView } from "@/lib/registry-view";
@@ -156,5 +157,55 @@ describe("OpenRouter provider (KEY-04 / KEY-01 / STAT-01)", () => {
     );
     expect(Number.isFinite(cost)).toBe(true);
     expect(cost).toBe(0);
+  });
+});
+
+describe("OPENROUTER_FREE_FALLBACK (saturation priority)", () => {
+  const REMOVED_IDS = [
+    "deepseek/deepseek-chat-v3.1:free",
+    "qwen/qwen3-235b-a22b:free",
+    "mistralai/mistral-small-3.2-24b-instruct:free",
+  ];
+
+  it("is a non-empty string[] with no duplicate ids", () => {
+    expect(Array.isArray(OPENROUTER_FREE_FALLBACK)).toBe(true);
+    expect(OPENROUTER_FREE_FALLBACK.length).toBeGreaterThan(0);
+    for (const id of OPENROUTER_FREE_FALLBACK) {
+      expect(typeof id).toBe("string");
+    }
+    expect(new Set(OPENROUTER_FREE_FALLBACK).size).toBe(
+      OPENROUTER_FREE_FALLBACK.length,
+    );
+  });
+
+  it("has length 6 and starts with ling-3.0-flash:free", () => {
+    expect(OPENROUTER_FREE_FALLBACK).toHaveLength(6);
+    expect(OPENROUTER_FREE_FALLBACK[0]).toBe("inclusionai/ling-3.0-flash:free");
+  });
+
+  it("resolves every fallback id to a selectable $0 openrouter model", () => {
+    for (const id of OPENROUTER_FREE_FALLBACK) {
+      const m = getModel(id);
+      expect(m, `${id} resolves`).toBeDefined();
+      expect(m!.provider, `${id} provider`).toBe("openrouter");
+      expect(m!.selectable, `${id} selectable`).toBe(true);
+      expect(m!.inputPer1M, `${id} inputPer1M`).toBe(0);
+      expect(m!.outputPer1M, `${id} outputPer1M`).toBe(0);
+      expect(m!.cacheReadPer1M, `${id} cacheReadPer1M`).toBe(0);
+      expect(m!.cacheWritePer1M, `${id} cacheWritePer1M`).toBe(0);
+    }
+  });
+
+  it("no longer resolves the three unverified guessed ids", () => {
+    for (const id of REMOVED_IDS) {
+      expect(getModel(id), `${id} removed`).toBeUndefined();
+    }
+  });
+
+  it("order equals the registry openrouter-entry order", () => {
+    const registryOrder = MODEL_REGISTRY.filter(
+      (m) => m.provider === "openrouter",
+    ).map((m) => m.id);
+    expect(registryOrder).toEqual(OPENROUTER_FREE_FALLBACK);
   });
 });
