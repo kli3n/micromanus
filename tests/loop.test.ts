@@ -8,6 +8,7 @@ import {
   type ToolCallRequest,
 } from "@/lib/agent/loop";
 import type { NormalizedUsage } from "@/lib/agent/adapter";
+import { OPENROUTER_FREE_FALLBACK } from "@/lib/registry";
 
 const BUDGET_COPY = "ran out of compute time (i)";
 
@@ -272,6 +273,41 @@ describe("runAgentLoop — think→act→observe (AGENT-01..05, PAY-06, D-28)", 
 
     expect(db.calls.refundRun).toHaveLength(0);
     expect(db.calls.markFirstModelCall).toHaveLength(1);
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
+  });
+
+  it("emits a rate_limited event with the priority-ordered fallback when a model call throws 429 (no raw body leaked)", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const RAW_BODY = "429 upstream saturated: openrouter provider raw body xyz";
+    const model = {
+      calls: [] as ChatMessage[][],
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async *run(messages: ChatMessage[]): AsyncGenerator<ModelChunk> {
+        this.calls.push(messages.map((m) => ({ ...m })));
+        const err = new Error(RAW_BODY) as Error & { status?: number };
+        err.status = 429;
+        throw err;
+        // eslint-disable-next-line no-unreachable
+        yield {} as ModelChunk;
+      },
+    };
+
+    await runAgentLoop({
+      ...baseParams(s.send, db, model as never, fakeTools()),
+      modelId: OPENROUTER_FREE_FALLBACK[0],
+    });
+
+    const rl = s.events.find((e) => e.event === "rate_limited");
+    expect(rl, "rate_limited event emitted").toBeDefined();
+    const data = rl!.data as { saturatedModelId: string; fallback: string[] };
+    expect(data.saturatedModelId).toBe(OPENROUTER_FREE_FALLBACK[0]);
+    expect(data.fallback).toEqual(OPENROUTER_FREE_FALLBACK.slice(1));
+    // Secret hygiene: the raw provider body never appears in the frame.
+    expect(JSON.stringify(rl)).not.toContain(RAW_BODY);
+    // Pre-first-call 429 → refund fired; first-model-call gate untouched.
+    expect(db.calls.refundRun).toEqual(["r1"]);
+    expect(db.calls.markFirstModelCall).toHaveLength(0);
     expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
   });
 

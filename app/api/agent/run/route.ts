@@ -151,6 +151,9 @@ const bodySchema = z.object({
   chatId: z.string().uuid().nullable(),
   message: z.string().trim().min(1),
   modelId: z.string().min(1),
+  // Saturation fallback: an EXPLICIT opt-in to switch this existing chat's model
+  // (only honored when true — a normal send keeps the "no mid-chat switch" rule).
+  switchModel: z.boolean().optional(),
 });
 
 /** One-shot SSE response that emits a single error + done, then closes. */
@@ -239,7 +242,10 @@ export async function POST(req: Request): Promise<Response> {
       return sseErrorResponse("db_error", "Could not open that chat.");
     }
     if (!chat) return sseErrorResponse("not_found", "Chat not found.");
-    modelId = chat.model_id; // no mid-chat model switch
+    // Default: no mid-chat model switch (use the stored model). ONLY an explicit
+    // saturation switch (switchModel:true) honors the client-supplied modelId; an
+    // invalid target still falls through to the registry validation below.
+    modelId = parsed.switchModel ? parsed.modelId : chat.model_id;
   }
 
   // (b2) Validate the effective model against the registry (T-04-07 / OQ-1).
@@ -251,6 +257,16 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
   const provider: Provider = spec.provider;
+
+  // Persist the switch so a plain retry no longer re-hits the saturated model.
+  // Chat metadata only (RLS-scoped by user_id) — NOT a ledger/RPC change.
+  if (chatId && parsed.switchModel) {
+    await svc
+      .from("chats")
+      .update({ model_id: modelId })
+      .eq("id", chatId)
+      .eq("user_id", userId);
+  }
 
   // (d) PRECONDITIONS — all BEFORE the debit (no orphan, no debit on failure).
   // (i) key row — ciphertext columns require the service-role client (REVOKE'd).

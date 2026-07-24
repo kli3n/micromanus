@@ -30,7 +30,7 @@
 import { z } from "zod";
 import type { NormalizedUsage } from "@/lib/agent/adapter";
 import { costUsd, type ModelPrices } from "@/lib/pricing";
-import { getModel } from "@/lib/registry";
+import { getModel, OPENROUTER_FREE_FALLBACK } from "@/lib/registry";
 
 // ============================ Shared DI types ============================
 // These are the canonical run-lifecycle DI shapes; app/api/agent/run/route.ts
@@ -369,6 +369,16 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
     if (!firstMarked) await db.refundRun(runId);
     await db.updateMessageContent(assistantMsgId, acc.length > 0 ? acc : mapped.message);
     await db.setRunStatus(runId, "failed", iterations);
+    // Saturation fallback: on a provider 429, surface the next free OpenRouter
+    // model(s) so the client can re-run the same question elsewhere. The payload
+    // carries ONLY model-id strings (never `err`, its message, or the raw provider
+    // body) — secret hygiene (T-hrw-01). Emitted even when `fallback` is empty;
+    // the client only renders the chooser when it is non-empty.
+    if (mapped.code === "rate_limited") {
+      const idx = OPENROUTER_FREE_FALLBACK.indexOf(modelId);
+      const fallback = idx >= 0 ? OPENROUTER_FREE_FALLBACK.slice(idx + 1) : [];
+      send("rate_limited", { saturatedModelId: modelId, fallback });
+    }
     send("error", mapped);
     send("done", { runId, status: "failed" });
   }
