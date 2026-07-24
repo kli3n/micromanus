@@ -1,6 +1,8 @@
 import { PdfTestButton } from "@/components/PdfTestButton";
 import { BalanceBadge } from "@/components/BalanceBadge";
+import { TopbarModelPicker } from "@/components/TopbarModelPicker";
 import { createClient } from "@/lib/supabase/server";
+import { MODEL_REGISTRY } from "@/lib/registry";
 
 /**
  * AppShell (D-02 / D-03) — the live chat layout the (app) group renders around
@@ -21,8 +23,9 @@ import { createClient } from "@/lib/supabase/server";
  *     from every authenticated screen; the chat list linking each chat to
  *     /app/c/[chatId] (CHAT-02/03) with the balance-branched empty-state; and the
  *     user card + sign-out;
- *   - topbar: workspace crumb, the topbar <BalanceBadge> (PAY-04), the Model slot
- *     (owned by 02-03/KEY-05 — left untouched), and PdfTestButton (D-12);
+ *   - topbar: workspace crumb, the topbar <BalanceBadge> (PAY-04), the live
+ *     <TopbarModelPicker> Model slot (KEY-05 — starts a new chat via
+ *     /app/c/new?model=<id>, credit-gated), and PdfTestButton (D-12);
  *   - {children} in the canvas.
  *
  * Canonical paths only: /app/c/[chatId], /app/settings, /app/stats (D-11 — never
@@ -68,6 +71,7 @@ export async function AppShell({
 
   let chats: ChatListItem[] = [];
   let balance = 0;
+  let savedProviders: string[] = [];
   if (userId) {
     const { data: chatRows } = await supabase
       .from("chats")
@@ -84,6 +88,15 @@ export async function AppShell({
       .select("delta")
       .eq("user_id", userId);
     balance = (ledgerRows ?? []).reduce((sum, r) => sum + (r.delta ?? 0), 0);
+
+    // KEY-05 / D-22: which providers the caller has a saved key for. Selects
+    // ONLY the `provider` column, RLS-scoped by user_id — never iv/ct/tag/last4
+    // (ciphertext columns are also REVOKE'd from `authenticated`, 0002).
+    const { data: keyRows } = await supabase
+      .from("user_api_keys")
+      .select("provider")
+      .eq("user_id", userId);
+    savedProviders = (keyRows ?? []).map((k) => k.provider as string);
   }
   const hasCredits = balance > 0;
 
@@ -293,26 +306,17 @@ export async function AppShell({
           <div className="flex-1" />
           {/* Always-visible balance (PAY-04). Distinct from the Model slot. */}
           <BalanceBadge balance={balance} />
-          <div
-            title="Model selection arrives in the next update"
-            className="flex h-9 cursor-not-allowed items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] px-3 text-[13px] font-[550] text-[var(--text-3)]"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-[15px] w-[15px]"
-            >
-              <path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3Z" />
-            </svg>
-            Model
-            <span className="rounded-[20px] bg-[var(--surface-3)] px-[6px] py-[2px] text-[10px] font-[600] text-[var(--text-3)]">
-              Soon
-            </span>
-          </div>
+          {/* Model slot (KEY-05, D-11 §03): the live topbar picker starts a NEW
+              research chat via /app/c/new?model=<id>. Rendered only with credits
+              (mirrors the sidebar CHAT-01 gating so 0-credit users aren't sent to
+              a dead-end composer). Claude greyed (OQ-1); no-key providers locked
+              with the "add key" nudge (D-22). */}
+          {hasCredits && (
+            <TopbarModelPicker
+              models={MODEL_REGISTRY}
+              savedProviders={savedProviders}
+            />
+          )}
           <PdfTestButton variant="topbar" />
         </header>
 

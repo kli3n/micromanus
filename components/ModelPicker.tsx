@@ -47,6 +47,7 @@ const PROVIDER_HEADING: Record<string, string> = {
   anthropic: "Anthropic — Claude",
   openai: "OpenAI",
   kimi: "Kimi — Moonshot",
+  openrouter: "OpenRouter",
   custom: "Custom",
 };
 
