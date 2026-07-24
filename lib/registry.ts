@@ -155,9 +155,9 @@ export const MODEL_REGISTRY: ModelSpec[] = [
   // the model is dropped. The wiring (provider seam + base URL) is what is
   // permanent here — not this specific id.
   {
-    id: "meta-llama/llama-3.3-70b-instruct:free",
+    id: "inclusionai/ling-3.0-flash:free",
     provider: "openrouter",
-    label: "Llama 3.3 70B (free · OpenRouter)",
+    label: "Ling 3.0 Flash (free · OpenRouter)",
     inputPer1M: 0,
     outputPer1M: 0,
     cacheReadPer1M: 0,
