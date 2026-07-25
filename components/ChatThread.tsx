@@ -388,8 +388,41 @@ export function ChatThread({
           table: "runs",
           filter: `chat_id=eq.${activeChatId}`,
         },
-        () => {
-          // Run-status changes drive no banner (D-25/26); reserved for 02-05.
+        (payload) => {
+          // Run-status changes drive no banner (D-25/26). On the PASSIVE tab only
+          // (the initiating tab owns SSE truth), a TERMINAL run status triggers a
+          // single authoritative message re-query — the belt-and-suspenders CHAT-08
+          // backstop so a reopened tab converges even if it missed an incremental
+          // Realtime UPDATE (e.g. a brief socket drop).
+          if (streamingRef.current) return; // this tab is the SSE source of truth
+          const status = (payload.new as { status?: string } | null)?.status;
+          if (!status || status === "running") return;
+          if (
+            status !== "succeeded" &&
+            status !== "failed" &&
+            status !== "budget_exhausted"
+          ) {
+            return;
+          }
+          void (async () => {
+            const { data } = await supabase
+              .from("messages")
+              .select("id, role, content")
+              .eq("chat_id", activeChatId)
+              .order("created_at", { ascending: true });
+            // Re-check the guard AFTER the await: the user may have started
+            // typing/streaming during the round-trip.
+            if (streamingRef.current) return;
+            if (data) {
+              setMessages(
+                data.map((m) => ({
+                  id: m.id as string,
+                  role: m.role as string,
+                  content: (m.content as string) ?? "",
+                })),
+              );
+            }
+          })();
         },
       )
       .subscribe();
