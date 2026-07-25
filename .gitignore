@@ -24,7 +24,7 @@ design/BROWSER-DESIGN.md
 # vercel
 .vercel
 
-# supabase (CLI local state — created by `supabase link` / `db push` in Gate B)
+# supabase (CLI local state created by `supabase link` / `db push` in Gate B)
 supabase/.temp
 supabase/.branches
 supabase/.env
