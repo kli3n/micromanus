@@ -309,6 +309,9 @@ export function ChatThread({
 }: ChatThreadProps) {
   const router = useRouter();
   const [activeChatId, setActiveChatId] = useState<string | null>(chatId);
+  // Ref mirror of activeChatId for closures that outlive a render (the stream
+  // catch path runs in a closure created before chat_created could update state).
+  const activeChatIdRef = useRef<string | null>(chatId);
   const [messages, setMessages] = useState<ThreadMessage[]>(initialMessages);
   const [balance, setBalance] = useState(initialBalance);
   const [input, setInput] = useState("");
@@ -435,6 +438,41 @@ export function ChatThread({
     setMessages((prev) => prev.map((m) => (m.id === id ? patch(m) : m)));
   }
 
+  /**
+   * Replace the local thread with the persisted rows (CHAT-08 connection-loss
+   * path). The optimistic `local-u-*` / `local-a-*` placeholders have fake ids,
+   * so once the SSE stream dies and Realtime un-suppresses, DB rows (real UUIDs)
+   * would otherwise APPEND next to them — duplicated user bubble + a stuck
+   * placeholder beside the real answer. Reconciling swaps in the real ids so
+   * subsequent Realtime INSERT/UPDATEs apply cleanly and the still-running
+   * server loop (waitUntil) keeps streaming into this tab. Returns false when
+   * there is nothing to reconcile from (no chat id yet / query failed).
+   */
+  async function reconcileFromDb(): Promise<boolean> {
+    const cid = activeChatIdRef.current;
+    if (!cid) return false;
+    try {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("messages")
+        .select("id, role, content")
+        .eq("chat_id", cid)
+        .order("created_at", { ascending: true });
+      if (!data || data.length === 0) return false;
+      if (streamingRef.current) return true; // a newer run owns the thread
+      setMessages(
+        data.map((m) => ({
+          id: m.id as string,
+          role: m.role as string,
+          content: (m.content as string) ?? "",
+        })),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function handleFrame(frame: string, assistantId: string) {
     const lines = frame.split("\n");
     let event = "";
@@ -456,6 +494,7 @@ export function ChatThread({
         const newId = data.chatId as string;
         if (newId) {
           setActiveChatId(newId);
+          activeChatIdRef.current = newId;
           window.history.replaceState(null, "", `/app/c/${newId}`);
           router.refresh(); // server-rendered sidebar picks up the new chat
         }
@@ -561,13 +600,19 @@ export function ChatThread({
         }
       }
     } catch {
-      // The server loop survives via waitUntil (CHAT-08); reopening resumes it.
-      patchMessage(assistantId, (m) => ({
-        ...m,
-        content:
-          m.content ||
-          "Connection interrupted — your run may still be completing. Reopen this chat to see the result.",
-      }));
+      // The server loop survives via waitUntil (CHAT-08). Un-suppress Realtime
+      // FIRST, then swap the local-* placeholders for the persisted rows so the
+      // run keeps streaming into this tab via Realtime instead of duplicating.
+      streamingRef.current = false;
+      const reconciled = await reconcileFromDb();
+      if (!reconciled) {
+        patchMessage(assistantId, (m) => ({
+          ...m,
+          content:
+            m.content ||
+            "Connection interrupted — your run may still be completing. Reopen this chat to see the result.",
+        }));
+      }
     } finally {
       streamingRef.current = false;
       setStreamingId(null);
