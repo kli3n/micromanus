@@ -497,6 +497,7 @@ export function ChatThread({
       }
       case "done":
         if (data.status === "succeeded") setBalance((b) => Math.max(0, b - 1));
+        router.refresh(); // re-query the RSC sidebar so the just-used chat floats to top (bump-to-top)
         break;
       case "error": {
         const msg =
