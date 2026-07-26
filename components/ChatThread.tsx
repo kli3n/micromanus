@@ -16,13 +16,21 @@ import { BalanceBadge } from "@/components/BalanceBadge";
  * response body with a fetch-reader (NOT EventSource, NOT AI-SDK useChat —
  * CLAUDE.md "What NOT to Use"), splitting the byte stream on the SSE frame
  * terminator, ignoring `: ping` heartbeats, and dispatching chat_created /
- * tool_status / usage / done / error. `token` deltas are intentionally NOT
- * painted: the thread shows an in-progress placeholder and the finished thread
- * is pushed WHOLE from the DB at terminal status (SSE `done` when connected,
- * the Realtime runs terminal UPDATE when the stream broke or stalled) — a
- * half-painted thread from a broken SSE stream can never duplicate against the
- * Realtime rows. Assistant content renders via react-markdown + remark-gfm
- * (safe-by-default, no raw HTML injection).
+ * token / tool_status / usage / done / error.
+ *
+ * Streaming vs disconnection (the CHAT-08 contract):
+ *   - While the SSE connection is LIVE, token deltas paint incrementally (the
+ *     normal streaming UX).
+ *   - If the stream ends WITHOUT a terminal event — fetch throw (client drop),
+ *     server close without `done`, or a silent stall (no bytes past the 15s
+ *     heartbeat cadence, caught by a 45s watchdog abort) — the half-painted
+ *     text is swapped for the "Researching…" placeholder and the thread lands
+ *     WHOLE from the DB at terminal status (SSE `done` never came; the
+ *     Realtime runs terminal UPDATE settles it). The DB never holds partials
+ *     (terminal-once persistence, loop.ts), so no reload path can show broken
+ *     tokens.
+ * Assistant content renders via react-markdown + remark-gfm (safe-by-default,
+ * no raw HTML injection).
  *
  * Reconnect (CHAT-08, D-25/26/27): a reopened tab (no local SSE stream) renders
  * `initialMessages` and applies Supabase Realtime postgres_changes on messages /
@@ -340,9 +348,12 @@ export function ChatThread({
   const streamingRef = useRef(false);
   // A run is "pending" from send until the FULL thread is reconciled from the
   // DB (terminal status). Unlike streamingRef (SSE reader liveness), pending
-  // survives a broken/stalled stream — the thread renders a loading placeholder
-  // and is pushed once, whole, when the run settles (no token-by-token paint).
+  // survives a broken/stalled stream — after a disconnection the thread renders
+  // the loading placeholder and is pushed once, whole, when the run settles.
   const pendingRef = useRef(false);
+  // Whether THIS stream delivered a terminal SSE event (done/error). A stream
+  // that ends without one ended by DISCONNECTION (client or server side).
+  const sawTerminalRef = useRef(false);
   // Seeded from the server when the latest run is mid-flight on page load
   // (refreshed/reopened tab). pendingRef stays FALSE for that case: Realtime
   // must apply normally so the terminal UPDATE fills the placeholder row.
@@ -523,10 +534,13 @@ export function ChatThread({
         break;
       }
       case "token":
-        // Intentionally ignored: the thread renders a loading placeholder and
-        // is pushed WHOLE at terminal status. Token-by-token painting was
-        // removed because a broken/stalled SSE stream left half-painted
-        // threads that duplicated against the Realtime rows.
+        // Live-connection streaming UX. If the stream later dies without a
+        // terminal event, handleStreamDrop swaps this half-painted text for
+        // the placeholder — partial text never survives a disconnection.
+        patchMessage(assistantId, (m) => ({
+          ...m,
+          content: m.content + ((data.delta as string) ?? ""),
+        }));
         break;
       case "tool_status": {
         const p = data as unknown as ToolStatusEntry;
@@ -557,6 +571,7 @@ export function ChatThread({
         break;
       }
       case "done":
+        sawTerminalRef.current = true;
         if (data.status === "succeeded") setBalance((b) => Math.max(0, b - 1));
         // Push the finished thread in one shot + refresh the RSC sidebar
         // (bump-to-top). settleFromDb is idempotent with the Realtime terminal
@@ -564,6 +579,7 @@ export function ChatThread({
         void settleFromDb();
         break;
       case "error": {
+        sawTerminalRef.current = true;
         const msg =
           (data.message as string) ||
           "The research run failed. Please try again.";
@@ -592,8 +608,19 @@ export function ChatThread({
     lastUserTextRef.current = text;
     streamingRef.current = true;
     pendingRef.current = true;
+    sawTerminalRef.current = false;
     setStreamingId(assistantId);
     setPendingAssistantId(assistantId);
+
+    // Stall watchdog: the server heartbeats every 15s, so a live connection is
+    // never byte-silent for long. 45s of silence = the stream died without
+    // erroring (proxy holding a dead socket) — abort so it becomes a normal
+    // disconnection instead of a forever-wedged reader.
+    const aborter = new AbortController();
+    let lastByteAt = Date.now();
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastByteAt > 45_000) aborter.abort();
+    }, 10_000);
 
     try {
       const res = await fetch("/api/agent/run", {
@@ -605,6 +632,7 @@ export function ChatThread({
           modelId: runModelId,
           ...(switchModel ? { switchModel: true } : {}),
         }),
+        signal: aborter.signal,
       });
       if (!res.ok || !res.body) {
         pendingRef.current = false;
@@ -622,6 +650,7 @@ export function ChatThread({
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
+        lastByteAt = Date.now();
         buffer += decoder.decode(value, { stream: true });
         let sep: number;
         while ((sep = buffer.indexOf("\n\n")) !== -1) {
@@ -630,33 +659,46 @@ export function ChatThread({
           if (frame.length > 0) handleFrame(frame, assistantId);
         }
       }
+      // Stream closed CLEANLY but no done/error event arrived → the server
+      // side dropped the connection mid-run.
+      if (!sawTerminalRef.current) await handleStreamDrop(assistantId);
     } catch {
-      // The server loop survives via waitUntil (CHAT-08). Keep the loading
-      // placeholder in place — the Realtime runs terminal UPDATE settles the
-      // whole thread when the run finishes. One immediate status check covers
-      // the run having ALREADY finished while this tab was disconnected (the
-      // terminal event it can no longer receive).
-      streamingRef.current = false;
-      try {
-        const cid = activeChatIdRef.current;
-        if (cid) {
-          const supabase = createClient();
-          const { data: run } = await supabase
-            .from("runs")
-            .select("status")
-            .eq("chat_id", cid)
-            .order("started_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          const status = run?.status as string | undefined;
-          if (status && status !== "running") await settleFromDb();
-        }
-      } catch {
-        /* stay pending — the Realtime terminal backstop settles the thread */
-      }
+      // Fetch threw → client-side drop (network loss) or the watchdog abort.
+      if (!sawTerminalRef.current) await handleStreamDrop(assistantId);
     } finally {
+      clearInterval(watchdog);
       streamingRef.current = false;
       setStreamingId(null);
+    }
+  }
+
+  /**
+   * The SSE stream ended by DISCONNECTION (no terminal event). The server loop
+   * survives via waitUntil (CHAT-08): swap the half-painted text for the
+   * "Researching…" placeholder — partial text must not survive a broken stream
+   * — and let the Realtime runs terminal UPDATE push the finished thread
+   * whole. One immediate status check covers the run having ALREADY finished
+   * while disconnected (the terminal event this tab can no longer receive).
+   */
+  async function handleStreamDrop(assistantId: string) {
+    streamingRef.current = false;
+    patchMessage(assistantId, (m) => ({ ...m, content: "" }));
+    try {
+      const cid = activeChatIdRef.current;
+      if (cid) {
+        const supabase = createClient();
+        const { data: run } = await supabase
+          .from("runs")
+          .select("status")
+          .eq("chat_id", cid)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const status = run?.status as string | undefined;
+        if (status && status !== "running") await settleFromDb();
+      }
+    } catch {
+      /* stay pending — the Realtime terminal backstop settles the thread */
     }
   }
 
@@ -735,6 +777,7 @@ export function ChatThread({
 
             const isUser = m.role === "user";
             const isPending = m.id === pendingAssistantId && m.content.length === 0;
+            const isStreaming = m.id === streamingId;
             const liveTools = toolsByMsg[m.id] ?? [];
             return (
               <div
@@ -755,11 +798,16 @@ export function ChatThread({
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {m.content}
                           </ReactMarkdown>
+                          {isStreaming && (
+                            <span className="streaming-cursor" aria-hidden="true" />
+                          )}
                         </div>
                       </div>
                     ) : isPending ? (
-                      /* In-progress placeholder: the finished thread is pushed
-                         whole at terminal status — no token-by-token paint. */
+                      /* Disconnection placeholder: shown only when no live SSE
+                         text exists for this run (stream dropped, or a
+                         refreshed tab) — the finished thread is pushed whole
+                         at terminal status. */
                       <div
                         role="status"
                         aria-live="polite"
