@@ -12,12 +12,17 @@ import { BalanceBadge } from "@/components/BalanceBadge";
  * ChatThread (CHAT-01/02/03/05/07/08, PAY-04/05) — the "use client" streaming
  * research thread.
  *
- * Streaming (CHAT-05/07): the composer POSTs to /api/agent/run and reads the
+ * Run lifecycle (CHAT-05/07): the composer POSTs to /api/agent/run and reads the
  * response body with a fetch-reader (NOT EventSource, NOT AI-SDK useChat —
  * CLAUDE.md "What NOT to Use"), splitting the byte stream on the SSE frame
- * terminator, ignoring `: ping` heartbeats, and dispatching chat_created / token
- * / usage / done / error. Assistant content renders via react-markdown +
- * remark-gfm (safe-by-default, no raw HTML injection).
+ * terminator, ignoring `: ping` heartbeats, and dispatching chat_created /
+ * tool_status / usage / done / error. `token` deltas are intentionally NOT
+ * painted: the thread shows an in-progress placeholder and the finished thread
+ * is pushed WHOLE from the DB at terminal status (SSE `done` when connected,
+ * the Realtime runs terminal UPDATE when the stream broke or stalled) — a
+ * half-painted thread from a broken SSE stream can never duplicate against the
+ * Realtime rows. Assistant content renders via react-markdown + remark-gfm
+ * (safe-by-default, no raw HTML injection).
  *
  * Reconnect (CHAT-08, D-25/26/27): a reopened tab (no local SSE stream) renders
  * `initialMessages` and applies Supabase Realtime postgres_changes on messages /
@@ -328,6 +333,12 @@ export function ChatThread({
     lastUserText: string;
   } | null>(null);
   const streamingRef = useRef(false);
+  // A run is "pending" from send until the FULL thread is reconciled from the
+  // DB (terminal status). Unlike streamingRef (SSE reader liveness), pending
+  // survives a broken/stalled stream — the thread renders a loading placeholder
+  // and is pushed once, whole, when the run settles (no token-by-token paint).
+  const pendingRef = useRef(false);
+  const [pendingAssistantId, setPendingAssistantId] = useState<string | null>(null);
   // The last user question sent — reused verbatim when a saturation switch
   // re-runs the same question on the fallback model (no re-typing).
   const lastUserTextRef = useRef("");
@@ -350,7 +361,10 @@ export function ChatThread({
     if (!activeChatId) return;
     const supabase = createClient();
     const applyRow = (row: { id: string; role: string; content: string | null }) => {
-      if (streamingRef.current) return; // this tab is the SSE source of truth
+      // Suppress while this tab owns a run (SSE live OR pending after a broken
+      // stream) — the thread is pushed whole at terminal status, never
+      // incrementally, so partial rows must not leak in beside placeholders.
+      if (streamingRef.current || pendingRef.current) return;
       setMessages((prev) => {
         const idx = prev.findIndex((m) => m.id === row.id);
         if (idx >= 0) {
@@ -392,12 +406,13 @@ export function ChatThread({
           filter: `chat_id=eq.${activeChatId}`,
         },
         (payload) => {
-          // Run-status changes drive no banner (D-25/26). On the PASSIVE tab only
-          // (the initiating tab owns SSE truth), a TERMINAL run status triggers a
-          // single authoritative message re-query — the belt-and-suspenders CHAT-08
-          // backstop so a reopened tab converges even if it missed an incremental
-          // Realtime UPDATE (e.g. a brief socket drop).
-          if (streamingRef.current) return; // this tab is the SSE source of truth
+          // Run-status changes drive no banner (D-25/26). A TERMINAL run status
+          // is the authoritative "thread is complete" signal for EVERY tab:
+          // passive/reopened tabs converge here, and the initiating tab relies
+          // on it when its SSE stream broke or stalled without ever throwing
+          // (the case a catch-based reconcile can never see). Reconciliation is
+          // idempotent (whole-thread replace), so racing the SSE `done` event
+          // is harmless.
           const status = (payload.new as { status?: string } | null)?.status;
           if (!status || status === "running") return;
           if (
@@ -407,25 +422,7 @@ export function ChatThread({
           ) {
             return;
           }
-          void (async () => {
-            const { data } = await supabase
-              .from("messages")
-              .select("id, role, content")
-              .eq("chat_id", activeChatId)
-              .order("created_at", { ascending: true });
-            // Re-check the guard AFTER the await: the user may have started
-            // typing/streaming during the round-trip.
-            if (streamingRef.current) return;
-            if (data) {
-              setMessages(
-                data.map((m) => ({
-                  id: m.id as string,
-                  role: m.role as string,
-                  content: (m.content as string) ?? "",
-                })),
-              );
-            }
-          })();
+          void settleFromDb();
         },
       )
       .subscribe();
@@ -439,14 +436,11 @@ export function ChatThread({
   }
 
   /**
-   * Replace the local thread with the persisted rows (CHAT-08 connection-loss
-   * path). The optimistic `local-u-*` / `local-a-*` placeholders have fake ids,
-   * so once the SSE stream dies and Realtime un-suppresses, DB rows (real UUIDs)
-   * would otherwise APPEND next to them — duplicated user bubble + a stuck
-   * placeholder beside the real answer. Reconciling swaps in the real ids so
-   * subsequent Realtime INSERT/UPDATEs apply cleanly and the still-running
-   * server loop (waitUntil) keeps streaming into this tab. Returns false when
-   * there is nothing to reconcile from (no chat id yet / query failed).
+   * Replace the local thread with the persisted rows. The optimistic
+   * `local-u-*` / `local-a-*` placeholders have fake ids, so DB rows (real
+   * UUIDs) can never be merged into them — the thread converges only by a
+   * whole-list replace. Returns false when there is nothing to reconcile from
+   * (no chat id yet / query failed / no rows).
    */
   async function reconcileFromDb(): Promise<boolean> {
     const cid = activeChatIdRef.current;
@@ -459,7 +453,6 @@ export function ChatThread({
         .eq("chat_id", cid)
         .order("created_at", { ascending: true });
       if (!data || data.length === 0) return false;
-      if (streamingRef.current) return true; // a newer run owns the thread
       setMessages(
         data.map((m) => ({
           id: m.id as string,
@@ -470,6 +463,25 @@ export function ChatThread({
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Terminal-status settle: push the finished thread from the DB in one shot,
+   * clear the loading placeholder + all run-ownership flags, and refresh the
+   * server-rendered sidebar (bump-to-top). Idempotent — safe to call from both
+   * the SSE `done` event and the Realtime runs terminal UPDATE, whichever
+   * arrives (first or both).
+   */
+  async function settleFromDb(): Promise<void> {
+    const ok = await reconcileFromDb();
+    if (ok) {
+      pendingRef.current = false;
+      streamingRef.current = false;
+      setPendingAssistantId(null);
+      setStreamingId(null);
+      setToolsByMsg({});
+      router.refresh();
     }
   }
 
@@ -501,10 +513,10 @@ export function ChatThread({
         break;
       }
       case "token":
-        patchMessage(assistantId, (m) => ({
-          ...m,
-          content: m.content + ((data.delta as string) ?? ""),
-        }));
+        // Intentionally ignored: the thread renders a loading placeholder and
+        // is pushed WHOLE at terminal status. Token-by-token painting was
+        // removed because a broken/stalled SSE stream left half-painted
+        // threads that duplicated against the Realtime rows.
         break;
       case "tool_status": {
         const p = data as unknown as ToolStatusEntry;
@@ -536,12 +548,17 @@ export function ChatThread({
       }
       case "done":
         if (data.status === "succeeded") setBalance((b) => Math.max(0, b - 1));
-        router.refresh(); // re-query the RSC sidebar so the just-used chat floats to top (bump-to-top)
+        // Push the finished thread in one shot + refresh the RSC sidebar
+        // (bump-to-top). settleFromDb is idempotent with the Realtime terminal
+        // backstop.
+        void settleFromDb();
         break;
       case "error": {
         const msg =
           (data.message as string) ||
           "The research run failed. Please try again.";
+        pendingRef.current = false;
+        setPendingAssistantId(null);
         patchMessage(assistantId, (m) => ({ ...m, content: m.content || msg }));
         break;
       }
@@ -564,7 +581,9 @@ export function ChatThread({
   }) {
     lastUserTextRef.current = text;
     streamingRef.current = true;
+    pendingRef.current = true;
     setStreamingId(assistantId);
+    setPendingAssistantId(assistantId);
 
     try {
       const res = await fetch("/api/agent/run", {
@@ -578,6 +597,8 @@ export function ChatThread({
         }),
       });
       if (!res.ok || !res.body) {
+        pendingRef.current = false;
+        setPendingAssistantId(null);
         patchMessage(assistantId, (m) => ({
           ...m,
           content:
@@ -600,18 +621,28 @@ export function ChatThread({
         }
       }
     } catch {
-      // The server loop survives via waitUntil (CHAT-08). Un-suppress Realtime
-      // FIRST, then swap the local-* placeholders for the persisted rows so the
-      // run keeps streaming into this tab via Realtime instead of duplicating.
+      // The server loop survives via waitUntil (CHAT-08). Keep the loading
+      // placeholder in place — the Realtime runs terminal UPDATE settles the
+      // whole thread when the run finishes. One immediate status check covers
+      // the run having ALREADY finished while this tab was disconnected (the
+      // terminal event it can no longer receive).
       streamingRef.current = false;
-      const reconciled = await reconcileFromDb();
-      if (!reconciled) {
-        patchMessage(assistantId, (m) => ({
-          ...m,
-          content:
-            m.content ||
-            "Connection interrupted — your run may still be completing. Reopen this chat to see the result.",
-        }));
+      try {
+        const cid = activeChatIdRef.current;
+        if (cid) {
+          const supabase = createClient();
+          const { data: run } = await supabase
+            .from("runs")
+            .select("status")
+            .eq("chat_id", cid)
+            .order("started_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const status = run?.status as string | undefined;
+          if (status && status !== "running") await settleFromDb();
+        }
+      } catch {
+        /* stay pending — the Realtime terminal backstop settles the thread */
       }
     } finally {
       streamingRef.current = false;
@@ -693,7 +724,7 @@ export function ChatThread({
             }
 
             const isUser = m.role === "user";
-            const isStreaming = m.id === streamingId;
+            const isPending = m.id === pendingAssistantId && m.content.length === 0;
             const liveTools = toolsByMsg[m.id] ?? [];
             return (
               <div
@@ -708,18 +739,27 @@ export function ChatThread({
                   <div className="flex w-full max-w-[92%] flex-col gap-1">
                     {/* Live tool-status lines for the initiating tab (CHAT-06). */}
                     <ToolStatusGroup tools={liveTools} />
-                    {(m.content.length > 0 || isStreaming) && (
+                    {m.content.length > 0 ? (
                       <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[14px] leading-[1.6] text-[var(--text)]">
                         <div className="chat-markdown prose-sm">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {m.content}
                           </ReactMarkdown>
-                          {isStreaming && (
-                            <span className="streaming-cursor" aria-hidden="true" />
-                          )}
                         </div>
                       </div>
-                    )}
+                    ) : isPending ? (
+                      /* In-progress placeholder: the finished thread is pushed
+                         whole at terminal status — no token-by-token paint. */
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="flex items-center gap-[10px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[13px] text-[var(--text-2)]"
+                      >
+                        <span className="agent-spinner" aria-hidden="true" />
+                        Researching — the full answer appears here when the run
+                        completes…
+                      </div>
+                    ) : null}
                     {saturation?.assistantId === m.id && (
                       <SaturationNotice
                         saturatedModelId={saturation.saturatedModelId}
