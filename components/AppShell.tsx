@@ -11,7 +11,7 @@ import { MODEL_REGISTRY } from "@/lib/registry";
  * Async server component. The (app) layout already enforced auth; this shell
  * re-derives `userId` (getClaims -> getUser) to run two RLS-scoped reads that
  * make the sidebar + topbar real (02-04 owns AppShell integration, wave 3):
- *   - the caller's `chats` (id, title, created_at desc) for the chat list;
+ *   - the caller's `chats` (id, title, last_activity_at desc) for the chat list;
  *   - balance = SUM(credits_ledger.delta) for the balance-aware new-chat button,
  *     the 0-credit sidebar empty-state, and the always-visible topbar
  *     <BalanceBadge> (PAY-04).
@@ -75,9 +75,9 @@ export async function AppShell({
   if (userId) {
     const { data: chatRows } = await supabase
       .from("chats")
-      .select("id, title, created_at")
+      .select("id, title, last_activity_at")
       .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+      .order("last_activity_at", { ascending: false });
     chats = (chatRows ?? []).map((c) => ({
       id: c.id as string,
       title: (c.title as string | null) ?? null,
