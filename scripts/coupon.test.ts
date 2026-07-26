@@ -1,12 +1,16 @@
 /**
- * scripts/coupon.test.ts — coupon single-use invariant (PAY-02 / PAY-03).
+ * scripts/coupon.test.ts — coupon per-(user, coupon) single-use invariant (PAY-02 / PAY-03).
  *
- * Proves against the LIVE migrated Supabase project (migration 0002) that
+ * Proves against the LIVE migrated Supabase project (migration 0004) that
+ * coupons are one redemption per (user, coupon): DISTINCT coupons stack, the
+ * SAME coupon replayed by one account is still blocked. Specifically,
  * public.redeem_coupon:
- *   1. A fresh user redeeming 'SID_DRDROID' gets 5 credits (SUM(delta) 0 → 5).
- *   2. A second redemption by the same user errors with 'already_redeemed'
- *      (the credits_ledger_coupon_once partial unique index → 23505).
- *   3. A different fresh user redeeming an unknown code errors 'invalid_code'.
+ *   1. A fresh user redeeming 'SID_DRDROID' gets 5 credits (SUM(delta) 0 → 5);
+ *      replaying SID_DRDROID errors 'already_redeemed'; the SAME user then
+ *      stacks 'DEV_TEST_100' (+100 → 105) because it is a DISTINCT coupon
+ *      (0004 redefined credits_ledger_coupon_once to (user_id, ref_id)); and
+ *      replaying DEV_TEST_100 errors 'already_redeemed' (23505), balance stays 105.
+ *   2. A different fresh user redeeming an unknown code errors 'invalid_code'.
  *
  * redeem_coupon derives identity from auth.uid() and is granted to authenticated,
  * so it is invoked through the USER (signed-in) client. Balances are asserted via
@@ -116,6 +120,25 @@ async function main(): Promise<void> {
     const afterReplay = await balanceOf(admin, uRedeem.id);
     assert(afterReplay === 5, `balance unchanged at 5 after blocked replay (got ${afterReplay})`);
 
+    // ---- Scenario 1b: a DISTINCT coupon stacks for the SAME user (per-(user, coupon)) ----
+    const stack = await rClient.rpc('redeem_coupon', { p_code: 'DEV_TEST_100' });
+    console.log('redeem DEV_TEST_100 (distinct coupon, same user):');
+    assert(stack.error === null, `distinct-coupon redeem succeeded (err: ${stack.error?.message ?? 'none'})`);
+    assert(stack.data === 100, `distinct-coupon redeem returned 100 credits (got ${JSON.stringify(stack.data)})`);
+    const afterStack = await balanceOf(admin, uRedeem.id);
+    assert(afterStack === 105, `distinct coupons stack: SUM(delta) 5 -> 105 (got ${afterStack})`);
+
+    // ---- Scenario 1c: replaying the SAME distinct coupon is still blocked ----
+    const stackReplay = await rClient.rpc('redeem_coupon', { p_code: 'DEV_TEST_100' });
+    console.log('redeem DEV_TEST_100 (replay):');
+    assert(stackReplay.error !== null, 'DEV_TEST_100 replay returned an error (did not succeed)');
+    assert(
+      includes(stackReplay.error?.message, 'already_redeemed'),
+      `DEV_TEST_100 replay error is already_redeemed (got: ${stackReplay.error?.message ?? 'none'})`,
+    );
+    const afterStackReplay = await balanceOf(admin, uRedeem.id);
+    assert(afterStackReplay === 105, `balance unchanged at 105 after blocked DEV_TEST_100 replay (got ${afterStackReplay})`);
+
     // ---- Scenario 2: unknown code rejected with invalid_code ----
     uBad = await makeUser(admin, 'badcode');
     const bClient = await userClient(uBad.email, uBad.password);
@@ -143,7 +166,7 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  console.log('\nCOUPON REGRESSION PASSED: single-use grant, replay blocked, invalid code rejected.');
+  console.log('\nCOUPON REGRESSION PASSED: grant + replay blocked, distinct coupons stack (SID_DRDROID+DEV_TEST_100 → 105), same-coupon replay blocked, invalid code rejected.');
 }
 
 main().catch((err: unknown) => {
