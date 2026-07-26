@@ -47,6 +47,10 @@ interface ChatThreadProps {
   modelId: string | null;
   balance: number;
   isNew: boolean;
+  /** Set by the page when the chat's latest run is still executing: the empty
+   * assistant row to render as the "Researching…" placeholder on a
+   * refreshed/reopened tab. Realtime fills/settles it at terminal status. */
+  initialPendingAssistantId?: string | null;
 }
 
 function WarnIcon() {
@@ -311,6 +315,7 @@ export function ChatThread({
   modelId,
   balance: initialBalance,
   isNew,
+  initialPendingAssistantId = null,
 }: ChatThreadProps) {
   const router = useRouter();
   const [activeChatId, setActiveChatId] = useState<string | null>(chatId);
@@ -338,7 +343,12 @@ export function ChatThread({
   // survives a broken/stalled stream — the thread renders a loading placeholder
   // and is pushed once, whole, when the run settles (no token-by-token paint).
   const pendingRef = useRef(false);
-  const [pendingAssistantId, setPendingAssistantId] = useState<string | null>(null);
+  // Seeded from the server when the latest run is mid-flight on page load
+  // (refreshed/reopened tab). pendingRef stays FALSE for that case: Realtime
+  // must apply normally so the terminal UPDATE fills the placeholder row.
+  const [pendingAssistantId, setPendingAssistantId] = useState<string | null>(
+    initialPendingAssistantId,
+  );
   // The last user question sent — reused verbatim when a saturation switch
   // re-runs the same question on the fallback model (no re-typing).
   const lastUserTextRef = useRef("");

@@ -139,8 +139,6 @@ const MAX_ITERATIONS = 12; // AGENT-01
 const BUDGET_MS = 240_000; // AGENT-02 / D-28 (before the 300s platform cap)
 /** Locked degrade copy (D-28 / 02-UI-SPEC "Budget exhausted"). Do not reword. */
 const BUDGET_COPY = "ran out of compute time (i)";
-const FLUSH_CHARS = 24;
-const FLUSH_MS = 250;
 
 // ============================ Tool definitions + arg schemas ============================
 export const webSearchArgs = z.object({ query: z.string().min(1) });
@@ -283,20 +281,16 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
       acc = "";
       let usage: NormalizedUsage | undefined;
       const toolCalls: ToolCallRequest[] = [];
-      let lastFlush = now();
-      let lastFlushLen = 0;
 
       for await (const chunk of model.run(conversation, TOOL_DEFINITIONS)) {
         if (typeof chunk.delta === "string" && chunk.delta.length > 0) {
           acc += chunk.delta;
           await ensureFirstMarked();
           send("token", { delta: chunk.delta });
-          const t = now();
-          if (acc.length - lastFlushLen >= FLUSH_CHARS || t - lastFlush >= FLUSH_MS) {
-            lastFlush = t;
-            lastFlushLen = acc.length;
-            await db.updateMessageContent(assistantMsgId, acc);
-          }
+          // NO mid-run persistence: messages.content is written ONCE, at a
+          // terminal state. Partial flushes used to leak half-generated text
+          // into every reload / passive tab (the "broken tokens on refresh"
+          // bug) — the DB must only ever hold complete terminal content.
         }
         if (chunk.toolCalls && chunk.toolCalls.length > 0) {
           toolCalls.push(...chunk.toolCalls);
@@ -367,7 +361,9 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
     // Refund ONLY when the very first model call never completed (disconnect is
     // not this path — the guarded send no-ops and never throws — Pitfall 3).
     if (!firstMarked) await db.refundRun(runId);
-    await db.updateMessageContent(assistantMsgId, acc.length > 0 ? acc : mapped.message);
+    // Terminal-once write: a failed run persists the clean error copy, never
+    // the in-flight partial text (broken tokens must not outlive the run).
+    await db.updateMessageContent(assistantMsgId, mapped.message);
     await db.setRunStatus(runId, "failed", iterations);
     // Saturation fallback: on a provider 429, surface the next free OpenRouter
     // model(s) so the client can re-run the same question elsewhere. The payload

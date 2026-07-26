@@ -85,6 +85,26 @@ export default async function ChatPage({
     content: (m.content as string) ?? "",
   }));
 
+  // Terminal-once contract: while the latest run is still executing, its
+  // assistant row is EMPTY by design (no partial flushes ever hit the DB).
+  // Surface that row's id so a refreshed/reopened tab renders the same
+  // "Researching…" placeholder as the initiating tab instead of a blank gap;
+  // the Realtime terminal UPDATE then fills it in one shot.
+  let pendingAssistantId: string | null = null;
+  const { data: latestRun } = await supabase
+    .from("runs")
+    .select("status")
+    .eq("chat_id", chatId)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestRun?.status === "running") {
+    const lastEmptyAssistant = [...initialMessages]
+      .reverse()
+      .find((m) => m.role === "assistant" && m.content.length === 0);
+    pendingAssistantId = lastEmptyAssistant?.id ?? null;
+  }
+
   return (
     <ChatThread
       chatId={chatId}
@@ -92,6 +112,7 @@ export default async function ChatPage({
       modelId={chat.model_id as string}
       balance={balance}
       isNew={false}
+      initialPendingAssistantId={pendingAssistantId}
     />
   );
 }

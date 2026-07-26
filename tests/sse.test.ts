@@ -176,7 +176,7 @@ describe("runTurn (single-turn orchestration; CHAT-04/05/08, PAY-05/06)", () => 
     expect(errFrame).not.toContain("PROVIDER_RAW_401_UNAUTHORIZED_BODY");
   });
 
-  it("does NOT refund when the model throws AFTER the first delta; persists the partial content", async () => {
+  it("does NOT refund when the model throws AFTER the first delta; persists the error copy, never the partial", async () => {
     const c = fakeController();
     const sender = createSseSender(c as never);
     const db = fakeDb();
@@ -187,6 +187,10 @@ describe("runTurn (single-turn orchestration; CHAT-04/05/08, PAY-05/06)", () => 
     expect(db.calls.refundRun).toHaveLength(0);
     expect(db.calls.markFirstModelCall).toHaveLength(1);
     expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
-    expect(db.calls.updateMessageContent.at(-1)!.content).toBe("partial");
+    // Terminal-once contract: mid-run text is never persisted, so a failed run
+    // must leave the mapped error copy — not half-generated tokens.
+    const last = db.calls.updateMessageContent.at(-1)!;
+    expect(last.content).not.toContain("partial");
+    expect(last.content.length).toBeGreaterThan(0);
   });
 });
