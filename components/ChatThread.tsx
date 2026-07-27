@@ -452,6 +452,56 @@ export function ChatThread({
     };
   }, [activeChatId]);
 
+  /**
+   * Settle backstop (CHAT-08). Realtime postgres_changes has NO replay: losing
+   * the client's network also drops the Realtime socket, so a run that reaches
+   * a terminal status while the socket is down emits an event nobody receives —
+   * and supabase-js resubscribes on reconnect WITHOUT backfilling. Relying on
+   * that event alone leaves the placeholder waiting forever (the exact bug).
+   * So while a run is pending and this tab has no live SSE stream, poll the run
+   * status and settle on any terminal value. Also probes immediately on mount
+   * (catches a run that finished between SSR and hydration) and whenever the
+   * tab regains network / visibility, so recovery is prompt rather than
+   * waiting out a full tick.
+   */
+  useEffect(() => {
+    if (!pendingAssistantId) return;
+    let stopped = false;
+    const check = async () => {
+      // The live SSE stream owns the thread; `done` settles it there.
+      if (stopped || streamingRef.current) return;
+      const cid = activeChatIdRef.current;
+      if (!cid) return;
+      try {
+        const supabase = createClient();
+        const { data: run } = await supabase
+          .from("runs")
+          .select("status")
+          .eq("chat_id", cid)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const status = run?.status as string | undefined;
+        if (!stopped && status && status !== "running") await settleFromDb();
+      } catch {
+        /* transient — the next tick retries */
+      }
+    };
+    void check();
+    const iv = setInterval(() => void check(), 4000);
+    const onWake = () => void check();
+    window.addEventListener("online", onWake);
+    document.addEventListener("visibilitychange", onWake);
+    return () => {
+      stopped = true;
+      clearInterval(iv);
+      window.removeEventListener("online", onWake);
+      document.removeEventListener("visibilitychange", onWake);
+    };
+    // settleFromDb reads refs only — safe to omit (matches the Realtime effect).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAssistantId]);
+
   function patchMessage(id: string, patch: (m: ThreadMessage) => ThreadMessage) {
     setMessages((prev) => prev.map((m) => (m.id === id ? patch(m) : m)));
   }
