@@ -15,6 +15,7 @@
     "test:guard": "node --env-file-if-exists=.env.local scripts/auth-guard.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.112.3",
     "@mozilla/readability": "0.6.0",
     "@sparticuz/chromium": "149.0.0",
     "@supabase/ssr": "0.12.3",

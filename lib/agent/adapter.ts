@@ -46,9 +46,40 @@ export function fromOpenAI(usage: unknown): NormalizedUsage {
   };
 }
 
-// Phase-3 slot (do NOT implement now — reserved shape only):
-// export function fromAnthropic(usage: unknown): NormalizedUsage {
-//   // Anthropic native `usage.input_tokens` EXCLUDES cache tokens (no subtraction);
-//   //   cache_read_input_tokens     -> cacheReadTokens
-//   //   cache_creation_input_tokens -> cacheWriteTokens
-// }
+interface AnthropicUsageShape {
+  input_tokens?: number; // EXCLUDES cache tokens (unlike OpenAI's prompt_tokens)
+  output_tokens?: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+}
+
+/**
+ * Normalize an Anthropic-native `usage` object (RSCH-05, D-48).
+ *
+ * INVARIANT (the mirror image of fromOpenAI): total prompt size =
+ *   input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+ * `input_tokens` is the UNCACHED REMAINDER ONLY, so there is NOTHING to
+ * subtract. Subtracting here would silently understate billable input.
+ * fromOpenAI must subtract because OpenAI's `prompt_tokens` INCLUDES
+ * `prompt_tokens_details.cached_tokens`.
+ *
+ * Cache fields can be absent OR null when caching is unused — coerce both to 0
+ * so the stats-page math can never NaN (Pitfall 2 from Phase 2).
+ *
+ * Deliberately UNMAPPED (double-count / no-column risks):
+ *   - usage.cache_creation.{ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}
+ *     (a sub-split of cache_creation_input_tokens — mapping both double-counts)
+ *   - usage.output_tokens_details.thinking_tokens (no NormalizedUsage column;
+ *     thinking is never enabled on this request shape)
+ */
+export function fromAnthropic(usage: unknown): NormalizedUsage {
+  const u = (usage ?? {}) as AnthropicUsageShape;
+  const n = (x: number | null | undefined): number =>
+    typeof x === "number" && Number.isFinite(x) ? Math.max(0, x) : 0;
+  return {
+    inputTokens: n(u.input_tokens), // NO subtraction
+    outputTokens: n(u.output_tokens),
+    cacheReadTokens: n(u.cache_read_input_tokens),
+    cacheWriteTokens: n(u.cache_creation_input_tokens),
+  };
+}
