@@ -12,7 +12,10 @@
     "typecheck": "tsc --noEmit",
     "test:rls": "node --env-file-if-exists=.env.local scripts/rls-probe.ts",
     "test:money": "node --env-file-if-exists=.env.local scripts/debit-concurrency.ts",
-    "test:guard": "node --env-file-if-exists=.env.local scripts/auth-guard.test.ts"
+    "test:guard": "node --env-file-if-exists=.env.local scripts/auth-guard.test.ts",
+    "eval:offline": "node --env-file-if-exists=.env.local scripts/eval-run.ts",
+    "eval:judge": "node --env-file-if-exists=.env.local scripts/eval-judge.ts",
+    "eval:gate": "npm test && npm run typecheck && npm run test:rls"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.112.3",
