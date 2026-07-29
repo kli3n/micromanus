@@ -1,12 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { remarkCitations } from "@/lib/markdown/remark-citations";
 import { createClient } from "@/lib/supabase/client";
 import { getModel } from "@/lib/registry";
 import { BalanceBadge } from "@/components/BalanceBadge";
+import {
+  ResearchPlanCard,
+  type PlanRowItem,
+} from "@/components/chat/ResearchPlanCard";
+import {
+  SourcesCard,
+  type FoundRow,
+  type SourceRow,
+} from "@/components/chat/SourcesCard";
+import { RunMeter } from "@/components/chat/RunMeter";
 
 /**
  * ChatThread (CHAT-01/02/03/05/07/08, PAY-04/05) — the "use client" streaming
@@ -118,6 +136,14 @@ function CheckIcon() {
  * A single live/persisted tool-status line (CHAT-06 / D-29). Payload shape is
  * emitted by the loop's `tool_status` SSE event AND persisted as the JSON content
  * of a role='tool' message row, so the live and reopened renders are identical.
+ *
+ * Phase 3 (03-03 payload contract — the server emits these shapes in 03-04):
+ * payloads gain a `kind` discriminator. Rows WITHOUT kind are the existing
+ * web_search / fetch_page tool lines (unchanged shape). kind "plan" carries
+ * the research-plan items; kind "meter" is the run-meter carrier; unknown or
+ * unparseable kinds render NOTHING (D-52 graceful absence — 03-06 owns
+ * kind "artifact"). fetch_page DONE payloads gain {n, title} on successful
+ * fetches; web_search DONE payloads gain {results}.
  */
 export interface ToolStatusEntry {
   id: string;
@@ -129,7 +155,120 @@ export interface ToolStatusEntry {
   resultCount?: number;
   tokensApprox?: number;
   note?: string;
+  // --- Phase 3 additions (03-03 interfaces block, LOCKED) ---
+  kind?: string; // "plan" | "meter" | (03-06: "artifact") — absent on plain tool lines
+  items?: string[]; // kind "plan": 1..8 sub-questions
+  startedAt?: string; // kind "meter": ISO runs.started_at
+  iterations?: number; // kind "meter", terminal: final count
+  elapsedMs?: number; // kind "meter", terminal: ended_at - started_at (server-computed)
+  n?: number; // fetch_page done: server-assigned source number
+  title?: string; // fetch_page done: page title
+  results?: { title: string; url: string; domain: string }[]; // web_search done, <= 8
 }
+
+/**
+ * Normalized URL for alsoFound matching (interfaces derivation rule):
+ * lowercase host, no trailing slash, no fragment.
+ */
+function normalizeUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    const path = u.pathname.replace(/\/+$/, "");
+    return `${u.host.toLowerCase()}${path}${u.search}`;
+  } catch {
+    return raw.toLowerCase().replace(/#.*$/, "").replace(/\/+$/, "");
+  }
+}
+
+interface RunSurfaces {
+  planItems: PlanRowItem[];
+  meter: ToolStatusEntry | null;
+  lines: ToolStatusEntry[];
+  registry: Set<number>;
+  sources: SourceRow[];
+  alsoFound: FoundRow[];
+}
+
+/**
+ * Derive every 03-03 surface from ONE ordered payload list — applied
+ * identically to live SSE state and persisted-row replay, so a reopened tab
+ * renders byte-identical surfaces (D-25 parity for free). Unknown kinds fall
+ * out of every bucket and render nothing (D-52).
+ */
+function deriveRunSurfaces(
+  tools: ToolStatusEntry[],
+  terminal: boolean,
+): RunSurfaces {
+  const plan = tools.find((t) => t.kind === "plan") ?? null;
+  const meter = tools.find((t) => t.kind === "meter") ?? null;
+  const lines = tools.filter((t) => t.kind == null);
+
+  const doneSearchCount = lines.filter(
+    (t) => t.tool === "web_search" && t.state === "done",
+  ).length;
+  // Plan-row resolution rule (interfaces block): row i is resolved when
+  // i < (count of DONE web_search entries for this message) OR the run is
+  // terminal — derived, never stored, so reopen parity is free (D-31/D-52).
+  const rawItems = plan && Array.isArray(plan.items) ? plan.items : [];
+  const planItems: PlanRowItem[] = rawItems.map((text, i) => ({
+    text: String(text),
+    resolved: terminal || i < doneSearchCount,
+  }));
+
+  // Citation registry + Sources rows: fetch_page done entries carrying n,
+  // sorted ascending by stored n — NEVER array order (Pitfall 10).
+  const registry = new Set<number>();
+  const sources: SourceRow[] = [];
+  const fetched = new Set<string>();
+  for (const t of lines) {
+    if (t.tool !== "fetch_page") continue;
+    if (t.url) fetched.add(normalizeUrl(t.url));
+    if (t.state === "done" && typeof t.n === "number" && !registry.has(t.n)) {
+      registry.add(t.n);
+      sources.push({
+        n: t.n,
+        title: t.title ?? t.domain ?? t.url ?? "",
+        url: t.url ?? "",
+        domain: t.domain ?? "",
+      });
+    }
+  }
+  sources.sort((a, b) => a.n - b.n);
+
+  // "Also found": union of web_search results whose normalized URL was never
+  // fetched, deduped, order preserved (D-36/D-37).
+  const seen = new Set<string>();
+  const alsoFound: FoundRow[] = [];
+  for (const t of lines) {
+    if (t.tool !== "web_search" || t.state !== "done") continue;
+    for (const r of t.results ?? []) {
+      if (!r || typeof r.url !== "string") continue;
+      const key = normalizeUrl(r.url);
+      if (fetched.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      alsoFound.push({
+        title: r.title ?? r.url,
+        url: r.url,
+        domain: r.domain ?? "",
+      });
+    }
+  }
+
+  return { planItems, meter, lines, registry, sources, alsoFound };
+}
+
+/**
+ * GFM tables render inside an overflow-x wrapper so wide research tables
+ * scroll instead of blowing out the 92% column (UI-SPEC .chat-markdown
+ * contract, [BD §8]).
+ */
+const markdownComponents: Components = {
+  table: ({ node: _node, ...props }) => (
+    <div className="md-tablewrap">
+      <table {...props} />
+    </div>
+  ),
+};
 
 function toolLineParts(t: ToolStatusEntry): { label: string; text: string; meta: string } {
   const running = t.state !== "done";
@@ -186,17 +325,27 @@ function ToolStatusLine({ t }: { t: ToolStatusEntry }) {
   );
 }
 
-function ToolStatusGroup({ tools }: { tools: ToolStatusEntry[] }) {
-  if (tools.length === 0) return null;
+function ToolStatusGroup({
+  tools,
+  meter,
+}: {
+  tools: ToolStatusEntry[];
+  meter?: ReactNode;
+}) {
+  if (tools.length === 0 && !meter) return null;
   return (
-    <div
-      className="my-[2px] flex flex-col border-l-2 border-[var(--border-strong)]"
-      role="status"
-      aria-live="polite"
-    >
-      {tools.map((t) => (
-        <ToolStatusLine key={t.id} t={t} />
-      ))}
+    <div className="my-[2px] flex flex-col border-l-2 border-[var(--border-strong)]">
+      {/* Run meter (STAT-06): FIRST row inside the bordered rail but OUTSIDE
+          the polite region — a 1s-ticking live region would spam assistive
+          tech continuously (03-UI-SPEC § [2] a11y). */}
+      {meter}
+      {tools.length > 0 && (
+        <div className="flex flex-col" role="status" aria-live="polite">
+          {tools.map((t) => (
+            <ToolStatusLine key={t.id} t={t} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -337,6 +486,16 @@ export function ChatThread({
   // Live tool-status lines keyed by the streaming assistant message id (CHAT-06).
   // The reopened tab renders persisted role='tool' rows instead (D-25 parity).
   const [toolsByMsg, setToolsByMsg] = useState<Record<string, ToolStatusEntry[]>>({});
+  // Per-run iteration counter fed by SSE `meter` events on the initiating tab
+  // (STAT-06; 03-04 emits one at the top of each loop pass). Reset per send
+  // and at settle.
+  const [liveIterations, setLiveIterations] = useState(0);
+  // Meter feed from runs Realtime UPDATEs (iterations, started_at — written
+  // per-pass by 03-04) for tabs that do NOT own a live SSE stream (D-25/D-56).
+  const [realtimeRun, setRealtimeRun] = useState<{
+    iterations: number;
+    startedAt?: string;
+  } | null>(null);
   // Saturation-fallback chooser: set on a `rate_limited` SSE event with a
   // non-empty fallback list; drives the inline SaturationNotice.
   const [saturation, setSaturation] = useState<{
@@ -427,6 +586,21 @@ export function ChatThread({
           filter: `chat_id=eq.${activeChatId}`,
         },
         (payload) => {
+          const run = payload.new as {
+            status?: string;
+            iterations?: number;
+            started_at?: string;
+          } | null;
+          // Run-meter feed (STAT-06, 03-03): pick up the per-pass iterations /
+          // started_at writes for tabs that do NOT own the run — the same
+          // initiating-tab suppression guard as applyRow (the initiating tab
+          // gets its iterations from the SSE `meter` events instead).
+          if (run && !streamingRef.current && !pendingRef.current) {
+            setRealtimeRun((prev) => ({
+              iterations: Math.max(prev?.iterations ?? 0, run.iterations ?? 0),
+              startedAt: run.started_at ?? prev?.startedAt,
+            }));
+          }
           // Run-status changes drive no banner (D-25/26). A TERMINAL run status
           // is the authoritative "thread is complete" signal for EVERY tab:
           // passive/reopened tabs converge here, and the initiating tab relies
@@ -434,7 +608,7 @@ export function ChatThread({
           // (the case a catch-based reconcile can never see). Reconciliation is
           // idempotent (whole-thread replace), so racing the SSE `done` event
           // is harmless.
-          const status = (payload.new as { status?: string } | null)?.status;
+          const status = run?.status;
           if (!status || status === "running") return;
           if (
             status !== "succeeded" &&
@@ -552,6 +726,10 @@ export function ChatThread({
       setPendingAssistantId(null);
       setStreamingId(null);
       setToolsByMsg({});
+      // Meter state resets with the run — the persisted meter carrier row
+      // (state "done", server-computed elapsedMs) renders the terminal form.
+      setLiveIterations(0);
+      setRealtimeRun(null);
       router.refresh();
     }
   }
@@ -593,6 +771,10 @@ export function ChatThread({
         }));
         break;
       case "tool_status": {
+        // Payloads with a `kind` discriminator (plan / meter — 03-03 contract)
+        // flow into the same per-message list; deriveRunSurfaces discriminates
+        // at render (kind "plan" -> ResearchPlanCard, "meter" -> RunMeter,
+        // unknown kind -> nothing, no kind -> the existing tool lines).
         const p = data as unknown as ToolStatusEntry;
         if (!p.id) break;
         setToolsByMsg((prev) => {
@@ -602,6 +784,15 @@ export function ChatThread({
             idx >= 0 ? list.map((t) => (t.id === p.id ? p : t)) : [...list, p];
           return { ...prev, [assistantId]: next };
         });
+        break;
+      }
+      case "meter": {
+        // Per-pass iteration counter (STAT-06; live tab only — reopened tabs
+        // use the runs Realtime UPDATE feed instead). Monotonic via max.
+        const n = data.iterations;
+        if (typeof n === "number" && Number.isFinite(n)) {
+          setLiveIterations((prev) => Math.max(prev, n));
+        }
         break;
       }
       case "usage":
@@ -661,6 +852,7 @@ export function ChatThread({
     sawTerminalRef.current = false;
     setStreamingId(assistantId);
     setPendingAssistantId(assistantId);
+    setLiveIterations(0); // fresh run — meter counts from its own SSE events
 
     // Stall watchdog: the server heartbeats every 15s, so a live connection is
     // never byte-silent for long. 45s of silence = the stream died without
@@ -790,6 +982,43 @@ export function ChatThread({
     });
   }
 
+  // Persisted-row replay derivation (D-25 parity, 03-03): associate each
+  // role='tool' row with its run's assistant row. The assistant placeholder is
+  // inserted before the loop starts, so a run segment in created_at order is
+  // [user] [assistant] [tool rows…] — tool rows attach to the nearest
+  // PRECEDING assistant row, resetting at every user row. The assistant block
+  // then renders plan card, rail, answer, sources in the UI-SPEC fixed
+  // vertical order from these payloads, and the tool rows render nothing at
+  // their own list positions (they'd otherwise paint BELOW the answer).
+  const replaySegments = useMemo(() => {
+    const byAssistant = new Map<string, ToolStatusEntry[]>();
+    const ownedToolRows = new Set<string>();
+    let lastAssistantId: string | null = null;
+    for (const m of messages) {
+      if (m.role === "user") {
+        lastAssistantId = null;
+        continue;
+      }
+      if (m.role === "assistant") {
+        lastAssistantId = m.id;
+        continue;
+      }
+      if (m.role !== "tool" || !lastAssistantId) continue;
+      ownedToolRows.add(m.id);
+      let entry: ToolStatusEntry | null = null;
+      try {
+        entry = JSON.parse(m.content) as ToolStatusEntry;
+      } catch {
+        entry = null; // D-52: an unparseable payload renders NOTHING
+      }
+      if (!entry) continue;
+      const list = byAssistant.get(lastAssistantId) ?? [];
+      list.push({ ...entry, id: entry.id || m.id });
+      byAssistant.set(lastAssistantId, list);
+    }
+    return { byAssistant, ownedToolRows };
+  }, [messages]);
+
   const showEmpty = messages.length === 0;
 
   return (
@@ -806,16 +1035,21 @@ export function ChatThread({
         )}
         <div className="flex flex-col gap-4">
           {messages.map((m) => {
-            // Persisted tool-status row (reopened tab, D-25) — render the same
-            // tool-status line as the live SSE `tool_status` event.
+            // Persisted tool-status rows (reopened tab, D-25). Segment-owned
+            // rows render inside their assistant block (fixed vertical order:
+            // plan card, rail, answer, sources) — nothing at their own
+            // position. Orphan rows (no preceding assistant — defensive) keep
+            // the legacy single-line rendering; kind-discriminated orphans
+            // render nothing (D-52 null fallback).
             if (m.role === "tool") {
+              if (replaySegments.ownedToolRows.has(m.id)) return null;
               let entry: ToolStatusEntry | null = null;
               try {
                 entry = JSON.parse(m.content) as ToolStatusEntry;
               } catch {
                 entry = null;
               }
-              if (!entry) return null;
+              if (!entry || entry.kind != null) return null;
               return (
                 <div key={m.id} className="flex justify-start">
                   <div className="w-full max-w-[92%]">
@@ -829,6 +1063,37 @@ export function ChatThread({
             const isPending = m.id === pendingAssistantId && m.content.length === 0;
             const isStreaming = m.id === streamingId;
             const liveTools = toolsByMsg[m.id] ?? [];
+            // A run is terminal for this message when this tab neither
+            // streams it nor holds it pending — replayed finished threads
+            // land here (SourcesCard is terminal-only, D-37).
+            const terminal = !isStreaming && m.id !== pendingAssistantId;
+            // Live SSE state and replayed rows feed ONE derivation (D-25
+            // parity). They never overlap: Realtime application is suppressed
+            // while this tab owns the run, and settleFromDb clears live tool
+            // state when the persisted rows take over.
+            const segmentTools = replaySegments.byAssistant.get(m.id) ?? [];
+            const { planItems, meter, lines, registry, sources, alsoFound } =
+              deriveRunSurfaces([...segmentTools, ...liveTools], terminal);
+            const meterStartedAt = meter?.startedAt ?? realtimeRun?.startedAt;
+            const meterRunning = meter?.state !== "done" && !terminal;
+            const meterNode =
+              meter && meterStartedAt ? (
+                <RunMeter
+                  startedAt={meterStartedAt}
+                  running={meterRunning}
+                  iterations={
+                    meterRunning
+                      ? Math.max(
+                          liveIterations,
+                          realtimeRun?.iterations ?? 0,
+                          meter.iterations ?? 0,
+                        )
+                      : (meter.iterations ??
+                        Math.max(liveIterations, realtimeRun?.iterations ?? 0))
+                  }
+                  elapsedMs={meter.elapsedMs}
+                />
+              ) : null;
             return (
               <div
                 key={m.id}
@@ -840,12 +1105,25 @@ export function ChatThread({
                   </div>
                 ) : (
                   <div className="flex w-full max-w-[92%] flex-col gap-1">
-                    {/* Live tool-status lines for the initiating tab (CHAT-06). */}
-                    <ToolStatusGroup tools={liveTools} />
+                    {/* [1] Research plan card (RSCH-01) — absent when the
+                        model omitted the block (D-52: renders null). */}
+                    <ResearchPlanCard items={planItems} />
+                    {/* [2] Run meter + tool-status rail — live SSE lines for
+                        the initiating tab (CHAT-06), replayed rows otherwise;
+                        one derivation feeds both (D-25). */}
+                    <ToolStatusGroup tools={lines} meter={meterNode} />
                     {m.content.length > 0 ? (
                       <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[14px] leading-[1.6] text-[var(--text)]">
-                        <div className="chat-markdown prose-sm">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {/* [3] Answer markdown on the real .chat-markdown
+                            stylesheet (the dead legacy class is deleted).
+                            Citations resolve per-render against the registry —
+                            an [n] streamed before source n registers stays
+                            literal and upgrades on a later delta (RSCH-02). */}
+                        <div className="chat-markdown">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm, remarkCitations(registry)]}
+                            components={markdownComponents}
+                          >
                             {m.content}
                           </ReactMarkdown>
                           {isStreaming && (
@@ -875,6 +1153,12 @@ export function ChatThread({
                         onSwitch={onSwitch}
                         onCancel={() => setSaturation(null)}
                       />
+                    )}
+                    {/* [5] Sources card — appears once, complete, at terminal
+                        state only (D-37; CLS contract). Renders null when the
+                        run fetched nothing (D-52). */}
+                    {terminal && (
+                      <SourcesCard sources={sources} alsoFound={alsoFound} />
                     )}
                   </div>
                 )}
