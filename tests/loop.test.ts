@@ -422,6 +422,7 @@ type KindPayload = {
   elapsedMs?: number;
   n?: number;
   title?: string;
+  extract?: string;
   results?: { title: string; url: string; domain: string }[];
   tool?: string;
 };
@@ -666,6 +667,14 @@ describe("source numbering + web_search results (RSCH-02, D-35/D-36)", () => {
     expect(done).toBeDefined();
     expect(done!.n).toBe(1);
     expect(typeof done!.title).toBe("string");
+    // The persisted done payload stores the EXACT <page> extraction the model
+    // saw (offline-eval reference text for EV-02/EV-03 — closed-book, no
+    // re-fetch). Same payload live and replayed (EV-17 twin invariant).
+    expect(done!.extract).toBe("page text");
+    const persisted = rowPayloads(db).find(
+      (p) => p.tool === "fetch_page" && p.state === "done",
+    );
+    expect(persisted?.extract).toBe("page text");
   });
 
   it("a throwing fetch consumes NO number and keeps the existing failure observation", async () => {

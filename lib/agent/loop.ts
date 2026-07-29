@@ -720,6 +720,15 @@ async function runToolCall(
         tokensApprox: r.tokensApprox,
         n,
         title,
+        // The EXACT extraction the model saw inside <page>…</page>, persisted
+        // so the offline eval (EV-02 entailment / EV-03 verbatim-quote check,
+        // scripts/eval-run.ts + eval-judge.ts) is closed-book over stored rows
+        // — no re-fetch, no live web (AI-SPEC § 5.0). Additive field on the
+        // LOCKED 03-03/03-04 payload contract: the client's kind/tool
+        // discriminated parser reads only known keys, and D-57 filters tool
+        // rows out of provider history, so neither rendering nor the cache
+        // prefix changes. Capped defensively at fetch-page's own MAX_CHARS.
+        extract: r.text.slice(0, 20_000),
       });
       return citedFetchObservation(n, url, r);
     } catch (err) {
