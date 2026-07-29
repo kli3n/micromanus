@@ -36,3 +36,38 @@ export function costUsd(
     line(u.cacheWriteTokens, p.cacheWritePer1M)
   );
 }
+
+/**
+ * Gross dollars saved by cache reads (STAT-05, D-53):
+ * `cacheReadTokens / 1e6 * (inputPricePer1M - cacheReadPricePer1M)`.
+ *
+ * D-53 invariants:
+ * - GROSS figure only — cache-write cost is displayed separately and is never
+ *   netted out here (net can go negative on a write-only chat).
+ * - Callers pass STORED event-time price columns from `usage_events` — never
+ *   `lib/registry.ts` prices.
+ * - Clamped with `Math.max(0, …)`: a hand-edited stored price pair where the
+ *   cache-read price exceeds the input price must render $0.000, never a
+ *   negative saving.
+ * - Any non-finite argument (NaN/undefined/Infinity) makes the WHOLE result 0
+ *   (never NaN out). Stricter than per-argument coercion on purpose: a row
+ *   with a missing cache-read price must claim $0.000 saved, not the full
+ *   input price — overstating a savings claim is worse than understating it.
+ */
+export function savingsUsd(
+  cacheReadTokens: number,
+  inputPricePer1M: number,
+  cacheReadPricePer1M: number,
+): number {
+  if (
+    !Number.isFinite(cacheReadTokens) ||
+    !Number.isFinite(inputPricePer1M) ||
+    !Number.isFinite(cacheReadPricePer1M)
+  ) {
+    return 0;
+  }
+  return Math.max(
+    0,
+    (cacheReadTokens / 1_000_000) * (inputPricePer1M - cacheReadPricePer1M),
+  );
+}
