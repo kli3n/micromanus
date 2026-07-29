@@ -789,6 +789,110 @@ describe("source numbering + web_search results (RSCH-02, D-35/D-36)", () => {
   });
 });
 
+// ============================ 03-05 additions ============================
+
+describe("create_pdf_report tool (RSCH-03, D-44/D-45)", () => {
+  const create_pdf_report = (id: string, args: unknown): ToolCallRequest => ({
+    id,
+    name: "create_pdf_report",
+    arguments: JSON.stringify(args),
+  });
+
+  it("returns the queued observation SYNCHRONOUSLY, consumes exactly one iteration, records {title, markdown}", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const report: { queued?: { title: string; markdown: string } } = {};
+    const longMd = "The full report body with inline [1] markers. ".repeat(10); // > 200 chars
+    const model = scriptedModel([
+      { toolCalls: [create_pdf_report("tc1", { title: "My Report", markdown: longMd })], usage: USAGE },
+      { deltas: ["Final answer."], usage: USAGE },
+    ]);
+
+    // Frozen clock: zero elapsed anywhere — the branch must not await any
+    // render (Chromium never runs inside the 240s budget, D-44/Pitfall 5).
+    await runAgentLoop({
+      ...baseParams(s.send, db, model, fakeTools(), () => 0),
+      report,
+    });
+
+    expect(model.calls).toHaveLength(2);
+    // D-45: the call consumed exactly one of the 12 iterations, no special-casing.
+    expect(db.calls.setRunIterations.map((c) => c.iterations)).toEqual([1, 2]);
+    const obs = JSON.stringify(model.calls[1]);
+    expect(obs).toContain(
+      "report queued — it will appear as a download below your answer",
+    );
+    expect(report.queued).toEqual({ title: "My Report", markdown: longMd });
+
+    // UI-SPEC locked tool-status copy.
+    const statuses = s.events
+      .filter((e) => e.event === "tool_status")
+      .map((e) => e.data as { tool?: string; state?: string; label?: string; meta?: string });
+    const running = statuses.find(
+      (p) => p.tool === "create_pdf_report" && p.state === "running",
+    );
+    const done = statuses.find(
+      (p) => p.tool === "create_pdf_report" && p.state === "done",
+    );
+    expect(running).toMatchObject({
+      label: "Preparing report",
+      meta: "renders after the run",
+    });
+    expect(done).toMatchObject({ label: "Report queued" });
+  });
+
+  it("args failing zod produce an error observation, never a throw, and queue nothing", async () => {
+    const db = fakeDb();
+    const report: { queued?: { title: string; markdown: string } } = {};
+    const model = scriptedModel([
+      { toolCalls: [create_pdf_report("tc1", { title: "" })], usage: USAGE },
+      { deltas: ["Recovered."], usage: USAGE },
+    ]);
+
+    await expect(
+      runAgentLoop({ ...baseParams(() => {}, db, model, fakeTools()), report }),
+    ).resolves.toBeUndefined();
+
+    expect(JSON.stringify(model.calls[1])).toContain(
+      "create_pdf_report → invalid tool arguments",
+    );
+    expect(report.queued).toBeUndefined();
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "succeeded" });
+  });
+
+  it("markdown shorter than 200 chars falls back to the stripPlanBlock'd terminal answer body (weak-model guard)", async () => {
+    const db = fakeDb();
+    const report: { queued?: { title: string; markdown: string } } = {};
+    const model = scriptedModel([
+      { toolCalls: [create_pdf_report("tc1", { title: "T", markdown: "stub" })], usage: USAGE },
+      {
+        deltas: ["```plan\n1. A\n```\n\n", "The full terminal answer body."],
+        usage: USAGE,
+      },
+    ]);
+
+    await runAgentLoop({ ...baseParams(() => {}, db, model, fakeTools()), report });
+
+    expect(report.queued).toBeDefined();
+    expect(report.queued!.title).toBe("T");
+    expect(report.queued!.markdown).toBe("The full terminal answer body.");
+  });
+
+  it("markdown of 200+ chars is kept verbatim — no fallback", async () => {
+    const db = fakeDb();
+    const report: { queued?: { title: string; markdown: string } } = {};
+    const longMd = "m".repeat(250);
+    const model = scriptedModel([
+      { toolCalls: [create_pdf_report("tc1", { title: "T", markdown: longMd })], usage: USAGE },
+      { deltas: ["Terminal answer."], usage: USAGE },
+    ]);
+
+    await runAgentLoop({ ...baseParams(() => {}, db, model, fakeTools()), report });
+
+    expect(report.queued!.markdown).toBe(longMd);
+  });
+});
+
 describe("mapProviderError secret hygiene (EV-18 delta row)", () => {
   it.each([[401], [403], [429], [500], [undefined]])(
     "status %s: neither the api key nor the raw provider body ever reaches an SSE frame or the DB",
