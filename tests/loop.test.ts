@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   runAgentLoop,
+  INCOMPLETE_COPY,
+  CONTEXT_TOO_LONG_COPY,
   type AgentTools,
   type ChatMessage,
   type ModelChunk,
@@ -23,6 +25,7 @@ interface Turn {
   deltas?: string[];
   usage?: NormalizedUsage;
   toolCalls?: ToolCallRequest[];
+  stopReason?: string;
   throwAt?: "before" | "after";
 }
 
@@ -42,7 +45,8 @@ function scriptedModel(turns: Turn[]) {
       for (const d of turn.deltas ?? []) yield { delta: d };
       if (turn.throwAt === "after") throw new Error("PROVIDER_RAW_500_BODY");
       if (turn.toolCalls && turn.toolCalls.length > 0) yield { toolCalls: turn.toolCalls };
-      if (turn.usage) yield { usage: turn.usage };
+      if (turn.usage) yield { usage: turn.usage, stopReason: turn.stopReason };
+      else if (turn.stopReason) yield { stopReason: turn.stopReason };
     },
   };
 }
@@ -321,4 +325,112 @@ describe("runAgentLoop — think→act→observe (AGENT-01..05, PAY-06, D-28)", 
     expect(Number.isNaN(row.cost_usd)).toBe(false);
     expect(row.input_tokens).toBe(0);
   });
+});
+
+describe("clean-finish guard (AI-SPEC New Risk #1 / EV-11)", () => {
+  it.each(["max_tokens", "length"])(
+    "appends the locked INCOMPLETE_COPY note when the terminal stopReason is %s",
+    async (reason) => {
+      const db = fakeDb();
+      const model = scriptedModel([
+        { deltas: ["A truncated mid-sentence answ"], usage: USAGE, stopReason: reason },
+      ]);
+      await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+      const last = db.calls.updateMessageContent.at(-1)!;
+      expect(last.content).toContain("A truncated mid-sentence answ");
+      expect(last.content.endsWith(INCOMPLETE_COPY)).toBe(true);
+    },
+  );
+
+  it.each(["end_turn", "stop", "tool_use", "stop_sequence", "tool_calls"])(
+    "appends NO note for the clean stopReason %s",
+    async (reason) => {
+      const db = fakeDb();
+      const model = scriptedModel([
+        { deltas: ["Clean answer."], usage: USAGE, stopReason: reason },
+      ]);
+      await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+      expect(db.calls.updateMessageContent.at(-1)!.content).toBe("Clean answer.");
+    },
+  );
+
+  it("treats an undefined stopReason as clean (lenient providers may omit it)", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([{ deltas: ["Clean answer."], usage: USAGE }]);
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    expect(db.calls.updateMessageContent.at(-1)!.content).toBe("Clean answer.");
+  });
+
+  it("routes model_context_window_exceeded to CONTEXT_TOO_LONG_COPY instead of the generic note", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([
+      {
+        deltas: ["Partial answer"],
+        usage: USAGE,
+        stopReason: "model_context_window_exceeded",
+      },
+    ]);
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    const last = db.calls.updateMessageContent.at(-1)!;
+    expect(last.content.endsWith(CONTEXT_TOO_LONG_COPY)).toBe(true);
+    expect(last.content).not.toContain(INCOMPLETE_COPY);
+  });
+
+  it("maps a 400 context-length provider ERROR to the context-too-long copy", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const RAW = "prompt is too long: maximum context length is N tokens (raw body)";
+    const model = {
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async *run(): AsyncGenerator<ModelChunk> {
+        const err = new Error(RAW) as Error & { status?: number };
+        err.status = 400;
+        throw err;
+        // eslint-disable-next-line no-unreachable
+        yield {} as ModelChunk;
+      },
+    };
+    await runAgentLoop(baseParams(s.send, db, model as never, fakeTools()));
+
+    const last = db.calls.updateMessageContent.at(-1)!;
+    expect(last.content).toContain(CONTEXT_TOO_LONG_COPY);
+    expect(JSON.stringify(s.events)).not.toContain(RAW);
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
+  });
+});
+
+describe("mapProviderError secret hygiene (EV-18 delta row)", () => {
+  it.each([[401], [403], [429], [500], [undefined]])(
+    "status %s: neither the api key nor the raw provider body ever reaches an SSE frame or the DB",
+    async (status) => {
+      const s = collectSend();
+      const db = fakeDb();
+      const SECRET = "sk-ant-super-secret-key-fragment";
+      const RAW_BODY = `provider raw body: unauthorized for key ${SECRET} (detail xyz)`;
+      const model = {
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async *run(): AsyncGenerator<ModelChunk> {
+          const err = new Error(RAW_BODY) as Error & { status?: number };
+          if (status !== undefined) err.status = status;
+          throw err;
+          // eslint-disable-next-line no-unreachable
+          yield {} as ModelChunk;
+        },
+      };
+      await runAgentLoop(baseParams(s.send, db, model as never, fakeTools()));
+
+      const everything =
+        JSON.stringify(s.events) + JSON.stringify(db.calls.updateMessageContent);
+      expect(everything).not.toContain(SECRET);
+      expect(everything).not.toContain(RAW_BODY);
+      // A human-readable mapped message was still delivered.
+      const errFrame = s.events.find((e) => e.event === "error");
+      expect(errFrame).toBeDefined();
+      expect((errFrame!.data as { message: string }).message.length).toBeGreaterThan(0);
+    },
+  );
 });
