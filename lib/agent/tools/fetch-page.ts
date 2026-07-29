@@ -26,6 +26,9 @@ export interface FetchPageResult {
   text: string;
   domain: string;
   tokensApprox: number;
+  /** Extracted page title (Readability / <title>), when one exists — feeds the
+   *  D-35 source registry's display title; callers fall back to `domain`. */
+  title?: string;
 }
 
 /** Typed failure the loop catches and turns into an observation string. */
@@ -111,16 +114,31 @@ function stripTags(html: string): string {
     .replace(/&gt;/gi, ">");
 }
 
-function extractReadable(html: string): string {
+const MAX_TITLE_CHARS = 300;
+
+/** Best-effort <title> extraction for the tag-strip fallback path. */
+function titleFromHtml(html: string): string | undefined {
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const t = m ? normalizeWhitespace(stripTags(m[1])) : "";
+  return t.length > 0 ? t.slice(0, MAX_TITLE_CHARS) : undefined;
+}
+
+function extractReadable(html: string): { text: string; title?: string } {
   try {
     const { document } = parseHTML(html);
     const article = new Readability(document as unknown as Document).parse();
     const content = article?.textContent?.trim();
-    if (content && content.length > 0) return normalizeWhitespace(content);
+    if (content && content.length > 0) {
+      const t = article?.title ? normalizeWhitespace(article.title) : "";
+      return {
+        text: normalizeWhitespace(content),
+        title: t.length > 0 ? t.slice(0, MAX_TITLE_CHARS) : titleFromHtml(html),
+      };
+    }
   } catch {
     // fall through to the tag-strip fallback
   }
-  return normalizeWhitespace(stripTags(html));
+  return { text: normalizeWhitespace(stripTags(html)), title: titleFromHtml(html) };
 }
 
 /** Read the body, capping total bytes so a huge page cannot exhaust memory. */
@@ -179,11 +197,12 @@ export async function fetchPage(
     }
     const html = await readCapped(res);
     const extracted = extractReadable(html);
-    const text = extracted.slice(0, MAX_CHARS);
+    const text = extracted.text.slice(0, MAX_CHARS);
     return {
       text,
       domain: new URL(url).hostname,
       tokensApprox: Math.ceil(text.length / CHARS_PER_TOKEN),
+      ...(extracted.title ? { title: extracted.title } : {}),
     };
   } catch (err) {
     if (err instanceof FetchPageError) throw err;

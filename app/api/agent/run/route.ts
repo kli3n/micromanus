@@ -8,6 +8,7 @@ import {
   type Model,
 } from "@/lib/agent/loop";
 import { DEEP_RESEARCH_SYSTEM } from "@/lib/agent/prompt";
+import { createSourceRegistry, type SourceRegistry } from "@/lib/agent/sources";
 import { createOpenAiCompatModel } from "@/lib/agent/models/openai-compat";
 import { createAnthropicModel } from "@/lib/agent/models/anthropic";
 import { webSearch } from "@/lib/agent/tools/web-search";
@@ -125,6 +126,9 @@ export interface RunTurnOpts {
   modelId: string;
   assistantMsgId: string;
   history: ChatMessage[];
+  /** Per-run source registry (D-35) — instantiated once per POST, threaded
+   *  into the loop so [n] numbering lives server-side for the whole run. */
+  sources?: SourceRegistry;
 }
 
 /** The default tool surface: real SerpAPI search + SSRF-guarded page fetch. */
@@ -447,6 +451,12 @@ export async function POST(req: Request): Promise<Response> {
       if (iterations != null) patch.iterations = iterations;
       await svc.from("runs").update(patch).eq("id", rid);
     },
+    async setRunIterations(rid, iterations) {
+      // Per-pass write (Correction C2 / STAT-06): runs has replica identity
+      // full (migration 0003), so this UPDATE is the Realtime event a reopened
+      // tab's meter consumes. Non-terminal — never touches status/ended_at.
+      await svc.from("runs").update({ iterations }).eq("id", rid);
+    },
     async insertUsageEvent(row) {
       await svc.from("usage_events").insert(row);
     },
@@ -470,7 +480,7 @@ export async function POST(req: Request): Promise<Response> {
         .select("id")
         .single();
       if (error || !data) {
-        console.error("[agent/run] insertToolMessage failed:", error);
+        console.error(`[agent/run] run=${row.runId} insertToolMessage failed:`, error);
         return "";
       }
       return data.id as string;
@@ -494,6 +504,10 @@ export async function POST(req: Request): Promise<Response> {
   // (h) Stream. waitUntil keeps the loop alive past client disconnect (CHAT-08).
   const finalChatId = chatId;
   const wasNew = createdNewChat;
+  // One source registry per run (D-35): every fetch_page success in this run
+  // mints its [n] here; the loop echoes the number into observations and the
+  // resolved tool rows carry it for the client + the 03-05 PDF bibliography.
+  const sources = createSourceRegistry();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const sender = createSseSender(controller);
@@ -509,6 +523,7 @@ export async function POST(req: Request): Promise<Response> {
         modelId,
         assistantMsgId,
         history: providerMessages,
+        sources,
       }).finally(() => {
         clearInterval(heartbeat);
         try {

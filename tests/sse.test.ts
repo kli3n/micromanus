@@ -138,7 +138,17 @@ describe("runTurn (single-turn orchestration; CHAT-04/05/08, PAY-05/06)", () => 
     await runTurn(baseOpts(sender.send, db, model));
 
     const events = c.frames.map((f) => /^event: (\w+)/.exec(f)![1]);
-    expect(events).toEqual(["token", "token", "usage", "done"]);
+    // 03-04 contract: the meter carrier rides tool_status (running at loop
+    // start, settled before done) and a meter event opens every pass.
+    expect(events).toEqual([
+      "tool_status",
+      "meter",
+      "token",
+      "token",
+      "usage",
+      "tool_status",
+      "done",
+    ]);
     expect(db.calls.markFirstModelCall).toHaveLength(1);
     expect(db.calls.insertUsageEvent).toHaveLength(1);
     expect(db.calls.updateMessageContent.at(-1)!.content).toBe("Hello");
