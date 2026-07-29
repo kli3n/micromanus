@@ -123,6 +123,43 @@ async function main(): Promise<void> {
     const bReadsOwnProfile = await bClient.from('profiles').select('*');
     if (bReadsOwnProfile.error) throw new Error(`B own profile read errored: ${bReadsOwnProfile.error.message}`);
     assert((bReadsOwnProfile.data?.length ?? 0) > 0, "B reads its OWN profiles row (handle_new_user trigger fired)");
+
+    // ---- artifacts (T-3-03 / migration 0006): cross-account isolation. ----
+    // Seed one chat + one artifact per user (service role bypasses RLS).
+    // Deleting the users in cleanup cascades chats → artifacts.
+    for (const u of [userA, userB]) {
+      const { data: chat, error: chatErr } = await admin
+        .from('chats')
+        .insert({ user_id: u.id, model_id: 'gpt-5.6-luna', title: 'rls probe chat' })
+        .select('id')
+        .single();
+      if (chatErr || !chat) throw new Error(`seed chat failed: ${chatErr?.message ?? 'no row'}`);
+      const { error: artErr } = await admin.from('artifacts').insert({
+        chat_id: chat.id,
+        user_id: u.id,
+        title: 'rls probe artifact',
+        status: 'pending',
+      });
+      if (artErr) throw new Error(`seed artifact failed: ${artErr.message}`);
+    }
+
+    console.log('artifacts:');
+    // (a) B asking explicitly for A's artifacts -> RLS filters them out (never 403).
+    const bReadsAArtifacts = await bClient.from('artifacts').select('*').eq('user_id', userA.id);
+    if (bReadsAArtifacts.error) throw new Error(`B->A artifacts read errored: ${bReadsAArtifacts.error.message}`);
+    assert((bReadsAArtifacts.data?.length ?? -1) === 0, "B reads 0 of A's artifacts rows");
+
+    // (b) B reading its own artifacts -> non-zero (a real policy, not silent-empty).
+    const bReadsOwnArtifacts = await bClient.from('artifacts').select('*');
+    if (bReadsOwnArtifacts.error) throw new Error(`B own artifacts read errored: ${bReadsOwnArtifacts.error.message}`);
+    assert(
+      (bReadsOwnArtifacts.data?.length ?? 0) > 0,
+      'B reads >0 of its OWN artifacts rows (not the silent-empty trap)',
+    );
+
+    // (c) anon key, no user token -> default deny.
+    const anonArtifacts = await anonOnly.from('artifacts').select('*');
+    assert((anonArtifacts.data?.length ?? -1) === 0, 'anon-only (no user token) reads 0 artifacts rows');
   } finally {
     for (const u of [userA, userB]) {
       if (u) {
