@@ -25,6 +25,12 @@ import {
   type SourceRow,
 } from "@/components/chat/SourcesCard";
 import { RunMeter } from "@/components/chat/RunMeter";
+import {
+  ArtifactCard,
+  parseArtifactCarrier,
+  type ArtifactCarrier,
+} from "@/components/chat/ArtifactCard";
+import { ExportPdfButton } from "@/components/chat/ExportPdfButton";
 
 /**
  * ChatThread (CHAT-01/02/03/05/07/08, PAY-04/05) — the "use client" streaming
@@ -140,9 +146,11 @@ function CheckIcon() {
  * Phase 3 (03-03 payload contract — the server emits these shapes in 03-04):
  * payloads gain a `kind` discriminator. Rows WITHOUT kind are the existing
  * web_search / fetch_page tool lines (unchanged shape). kind "plan" carries
- * the research-plan items; kind "meter" is the run-meter carrier; unknown or
- * unparseable kinds render NOTHING (D-52 graceful absence — 03-06 owns
- * kind "artifact"). fetch_page DONE payloads gain {n, title} on successful
+ * the research-plan items; kind "meter" is the run-meter carrier; kind
+ * "artifact" is the PDF report carrier (03-05/03-06 — pending/ready/degraded,
+ * settled over the SAME messages Realtime channel by an UPDATE after the SSE
+ * stream closed, D-46); unknown or unparseable kinds render NOTHING (D-52
+ * graceful absence). fetch_page DONE payloads gain {n, title} on successful
  * fetches; web_search DONE payloads gain {results}.
  */
 export interface ToolStatusEntry {
@@ -156,14 +164,17 @@ export interface ToolStatusEntry {
   tokensApprox?: number;
   note?: string;
   // --- Phase 3 additions (03-03 interfaces block, LOCKED) ---
-  kind?: string; // "plan" | "meter" | (03-06: "artifact") — absent on plain tool lines
+  kind?: string; // "plan" | "meter" | "artifact" — absent on plain tool lines
   items?: string[]; // kind "plan": 1..8 sub-questions
   startedAt?: string; // kind "meter": ISO runs.started_at
   iterations?: number; // kind "meter", terminal: final count
   elapsedMs?: number; // kind "meter", terminal: ended_at - started_at (server-computed)
   n?: number; // fetch_page done: server-assigned source number
-  title?: string; // fetch_page done: page title
+  title?: string; // fetch_page done: page title | kind "artifact": report title
   results?: { title: string; url: string; domain: string }[]; // web_search done, <= 8
+  // --- kind "artifact" (03-05 carrier contract, validated on read) ---
+  artifactId?: string; // kind "artifact": artifacts row id for the download route
+  markdown?: string; // kind "artifact", forward-compat: degraded report body
 }
 
 /**
@@ -187,6 +198,7 @@ interface RunSurfaces {
   registry: Set<number>;
   sources: SourceRow[];
   alsoFound: FoundRow[];
+  artifact: ArtifactCarrier | null;
 }
 
 /**
@@ -202,6 +214,17 @@ function deriveRunSurfaces(
   const plan = tools.find((t) => t.kind === "plan") ?? null;
   const meter = tools.find((t) => t.kind === "meter") ?? null;
   const lines = tools.filter((t) => t.kind == null);
+
+  // Artifact carrier (RSCH-03, D-46): validated defensively on read — rows
+  // from any deploy vintage are untrusted (T-3-60), so an unknown state or a
+  // missing artifactId renders NOTHING. Last valid entry wins: the settle
+  // UPDATE (ready/degraded) supersedes the pending insert on the same row.
+  let artifact: ArtifactCarrier | null = null;
+  for (const t of tools) {
+    if (t.kind !== "artifact") continue;
+    const parsed = parseArtifactCarrier(t);
+    if (parsed) artifact = parsed;
+  }
 
   const doneSearchCount = lines.filter(
     (t) => t.tool === "web_search" && t.state === "done",
@@ -254,7 +277,7 @@ function deriveRunSurfaces(
     }
   }
 
-  return { planItems, meter, lines, registry, sources, alsoFound };
+  return { planItems, meter, lines, registry, sources, alsoFound, artifact };
 }
 
 /**
@@ -771,9 +794,10 @@ export function ChatThread({
         }));
         break;
       case "tool_status": {
-        // Payloads with a `kind` discriminator (plan / meter — 03-03 contract)
-        // flow into the same per-message list; deriveRunSurfaces discriminates
-        // at render (kind "plan" -> ResearchPlanCard, "meter" -> RunMeter,
+        // Payloads with a `kind` discriminator (plan / meter / artifact —
+        // 03-03/03-05 contracts) flow into the same per-message list;
+        // deriveRunSurfaces discriminates at render (kind "plan" ->
+        // ResearchPlanCard, "meter" -> RunMeter, "artifact" -> ArtifactCard,
         // unknown kind -> nothing, no kind -> the existing tool lines).
         const p = data as unknown as ToolStatusEntry;
         if (!p.id) break;
@@ -1019,6 +1043,15 @@ export function ChatThread({
     return { byAssistant, ownedToolRows };
   }, [messages]);
 
+  // Export-as-PDF title (D-38): derived from the chat title, which is the
+  // literal first user prompt (CHAT-02) — so the first user message content
+  // IS the chat title on live and reopened tabs alike. Truncated to the
+  // render route's zod bound (title 1..200).
+  const exportTitle = useMemo(() => {
+    const first = messages.find((mm) => mm.role === "user")?.content ?? "";
+    return first.trim().slice(0, 200).trim() || "Research report";
+  }, [messages]);
+
   const showEmpty = messages.length === 0;
 
   return (
@@ -1072,8 +1105,15 @@ export function ChatThread({
             // while this tab owns the run, and settleFromDb clears live tool
             // state when the persisted rows take over.
             const segmentTools = replaySegments.byAssistant.get(m.id) ?? [];
-            const { planItems, meter, lines, registry, sources, alsoFound } =
-              deriveRunSurfaces([...segmentTools, ...liveTools], terminal);
+            const {
+              planItems,
+              meter,
+              lines,
+              registry,
+              sources,
+              alsoFound,
+              artifact,
+            } = deriveRunSurfaces([...segmentTools, ...liveTools], terminal);
             const meterStartedAt = meter?.startedAt ?? realtimeRun?.startedAt;
             const meterRunning = meter?.state !== "done" && !terminal;
             const meterNode =
@@ -1154,12 +1194,63 @@ export function ChatThread({
                         onCancel={() => setSaturation(null)}
                       />
                     )}
+                    {/* [4] Export as PDF (D-38) — the always-visible safety
+                        net on every TERMINAL assistant answer (never a
+                        streaming one): the same PDF via /api/render-pdf even
+                        when the model never called the tool, and the retry
+                        path for a degraded card. Carries the D-42
+                        bibliography from the client-held source registry. */}
+                    {terminal && m.content.length > 0 && (
+                      <ExportPdfButton
+                        title={exportTitle}
+                        markdown={m.content}
+                        sources={sources
+                          .slice(0, 50)
+                          .map((s) => ({ n: s.n, title: s.title, url: s.url }))}
+                      />
+                    )}
                     {/* [5] Sources card — appears once, complete, at terminal
                         state only (D-37; CLS contract). Renders null when the
                         run fetched nothing (D-52). */}
                     {terminal && (
                       <SourcesCard sources={sources} alsoFound={alsoFound} />
                     )}
+                    {/* [6] Artifact card (RSCH-03) — only when a report was
+                        requested (D-52 absence otherwise). Fixed 72px box;
+                        the pending→ready/degraded settle arrives as a
+                        messages Realtime UPDATE on the already-subscribed
+                        channel AFTER the SSE stream closed, when the
+                        initiating-tab suppression flags are already cleared
+                        by settleFromDb (D-46 — no new subscription). */}
+                    {artifact && (
+                      <ArtifactCard
+                        artifactId={artifact.artifactId}
+                        title={artifact.title}
+                        state={artifact.state}
+                      />
+                    )}
+                    {/* [7] Degraded report body (RSCH-04, D-43) — the user
+                        always gets the content: the report markdown in a
+                        standard assistant bubble beneath the card. Source:
+                        carrier markdown when present (forward-compat), else
+                        the terminal answer — the report body IS the answer
+                        in the fallback path (03-05 weak-markdown guarantee). */}
+                    {artifact?.state === "degraded" &&
+                      (artifact.markdown ?? m.content).length > 0 && (
+                        <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[14px]">
+                          <div className="chat-markdown">
+                            <ReactMarkdown
+                              remarkPlugins={[
+                                remarkGfm,
+                                remarkCitations(registry),
+                              ]}
+                              components={markdownComponents}
+                            >
+                              {artifact.markdown ?? m.content}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                      )}
                   </div>
                 )}
               </div>
