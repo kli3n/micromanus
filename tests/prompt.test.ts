@@ -10,7 +10,7 @@ import { DEEP_RESEARCH_SYSTEM } from "@/lib/agent/prompt";
  * deliberate, reviewed diff that also updates this literal.
  */
 const PINNED_SHA256 =
-  "0000000000000000000000000000000000000000000000000000000000000000";
+  "4c9ae18a999483bf413338bddcd98340858e0146250efddfb4b132c0d2fcddc8";
 
 describe("DEEP_RESEARCH_SYSTEM (D-49 byte-stable cached prefix)", () => {
   it("(a) sha256 of the prompt equals the pinned hex literal — edits must be deliberate", () => {

@@ -146,6 +146,35 @@ export async function runTurn(opts: RunTurnOpts): Promise<void> {
   await runAgentLoop({ ...opts, tools: DEFAULT_TOOLS });
 }
 
+// ============================ Provider-history hygiene (D-57 / D-59) ============================
+/**
+ * Pure filter applied to persisted message rows before they are replayed into
+ * provider history. Exported so tests/history-filter.test.ts and
+ * tests/anthropic-model.test.ts can pin the cache-breakpoint POSITIONS against
+ * the REAL filter output (AI-SPEC New Risk #2), not a hand-built literal.
+ *
+ * Both predicates stay adjacent in ONE loop (never a server-side .neq()) so
+ * the two reasons for dropping a row read together (Pitfall 3).
+ */
+export function filterProviderHistory(
+  rows: Array<{ role: string; content: string | null }>,
+): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  for (const r of rows) {
+    // D-57 (E1): persisted role='tool' rows are display-only status lines —
+    // JSON content, no tool_call_id. Strict providers 400 on them.
+    if (r.role === "tool") continue;
+    // D-59 (E1b): a run killed between the assistant-row insert and the
+    // terminal write leaves content='' (or null), which Anthropic rejects as
+    // an empty text block (also documented as un-cacheable).
+    if ((r.content ?? "").trim().length === 0) continue;
+    out.push({ role: r.role, content: r.content as string });
+  }
+  // Note: filtering tool rows can leave two consecutive same-role user
+  // messages — that is fine; Anthropic combines them into one turn.
+  return out;
+}
+
 // ============================ Request body ============================
 const bodySchema = z.object({
   chatId: z.string().uuid().nullable(),

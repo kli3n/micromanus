@@ -66,6 +66,12 @@ export interface ModelChunk {
   usage?: NormalizedUsage;
   /** Present on the final chunk of a turn where the model requested tools. */
   toolCalls?: ToolCallRequest[];
+  /**
+   * The provider's stop/finish reason for the turn (Anthropic `stop_reason`,
+   * openai-compat `finish_reason`). Optional — lenient providers may omit it;
+   * the loop's clean-finish guard treats undefined as clean.
+   */
+  stopReason?: string;
 }
 
 export interface Model {
