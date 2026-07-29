@@ -6,7 +6,13 @@ import {
   type ChatMessage,
   type Db,
   type Model,
+  type QueuedReport,
 } from "@/lib/agent/loop";
+import {
+  artifactCarrierPayload,
+  insertPendingArtifact,
+  settleReport,
+} from "@/lib/artifacts/db";
 import { DEEP_RESEARCH_SYSTEM } from "@/lib/agent/prompt";
 import { createSourceRegistry, type SourceRegistry } from "@/lib/agent/sources";
 import { createOpenAiCompatModel } from "@/lib/agent/models/openai-compat";
@@ -129,6 +135,9 @@ export interface RunTurnOpts {
   /** Per-run source registry (D-35) — instantiated once per POST, threaded
    *  into the loop so [n] numbering lives server-side for the whole run. */
   sources?: SourceRegistry;
+  /** Mutable queued-report slot (D-44) — a create_pdf_report call records
+   *  intent here; the deferred settle reads it after the run is terminal. */
+  report?: { queued?: QueuedReport };
 }
 
 /** The default tool surface: real SerpAPI search + SSRF-guarded page fetch. */
@@ -179,6 +188,23 @@ export function filterProviderHistory(
   return out;
 }
 
+// ============================ Self-fetch origin (Correction C3) ============================
+/**
+ * Resolve the origin for the deferred render self-fetch from the INCOMING
+ * request — NEVER from VERCEL_URL (documented incompatible with Standard
+ * Deployment Protection) or VERCEL_PROJECT_PRODUCTION_URL (would point a
+ * preview's render at production). `x-forwarded-host` is what Vercel's edge
+ * sets to the host the client actually requested; `host` and `req.url` are
+ * the local-dev fallbacks (RESEARCH Pattern 3).
+ */
+export function originOf(req: Request): string {
+  const h = req.headers;
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  if (host) return `${proto}://${host}`;
+  return new URL(req.url).origin; // last resort (vercel dev without x-forwarded-*)
+}
+
 // ============================ Request body ============================
 const bodySchema = z.object({
   chatId: z.string().uuid().nullable(),
@@ -220,6 +246,14 @@ export async function POST(req: Request): Promise<Response> {
       import("@/lib/crypto"),
       import("@vercel/functions"),
     ]);
+
+  // Deferred-render capture (Correction C3): BOTH values are read at request
+  // time, before the stream starts — waitUntil runs after the response closes
+  // and re-reading a consumed request is unsafe. The forwarded cookie does
+  // double duty: it satisfies Vercel deployment protection AND carries the
+  // Supabase session the render route's auth check (D-40) needs.
+  const renderOrigin = originOf(req);
+  const forwardCookie = req.headers.get("cookie") ?? "";
 
   // (a) Identity — user-scoped client, IDENTITY ONLY (never the debit path).
   const supabase = await createClient();
@@ -508,6 +542,9 @@ export async function POST(req: Request): Promise<Response> {
   // mints its [n] here; the loop echoes the number into observations and the
   // resolved tool rows carry it for the client + the 03-05 PDF bibliography.
   const sources = createSourceRegistry();
+  // Queued-report slot (D-44): filled synchronously by a create_pdf_report
+  // tool call inside the loop; consumed by the deferred settle below.
+  const reportSlot: { queued?: QueuedReport } = {};
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const sender = createSseSender(controller);
@@ -524,14 +561,94 @@ export async function POST(req: Request): Promise<Response> {
         assistantMsgId,
         history: providerMessages,
         sources,
-      }).finally(() => {
-        clearInterval(heartbeat);
-        try {
-          controller.close();
-        } catch {
-          /* client gone */
-        }
-      });
+        report: reportSlot,
+      })
+        .finally(() => {
+          // The run is terminal as soon as the answer is done (D-46): close
+          // the stream FIRST so the client's `done` lands immediately — the
+          // render fires afterwards and settles over Realtime.
+          clearInterval(heartbeat);
+          try {
+            controller.close();
+          } catch {
+            /* client gone */
+          }
+        })
+        .then(async () => {
+          // Deferred PDF render (D-44/D-46/D-47) — same waitUntil task, after
+          // terminal, after the SSE stream closed. Every failure path lands on
+          // a degraded settle; nothing here may throw out of the task.
+          if (!reportSlot.queued) return;
+          const q = reportSlot.queued;
+          let artifactId: string | null = null;
+          let carrierMsgId = "";
+          try {
+            // Pending rows FIRST (AI-SPEC Pitfall 10): a waitUntil cancelled by
+            // the platform timeout still leaves reopenable state behind.
+            artifactId = await insertPendingArtifact(svc, {
+              runId: runIdStr,
+              chatId: finalChatId,
+              userId,
+              title: q.title,
+            });
+            if (!artifactId) return; // no row — nothing a settle could update
+            carrierMsgId =
+              (await db.insertToolMessage?.({
+                chatId: finalChatId,
+                userId,
+                runId: runIdStr,
+                content: artifactCarrierPayload(artifactId, q.title, "pending"),
+              })) ?? "";
+            // The run's complete source registry → the PDF bibliography (D-42).
+            const registrySources = sources
+              .entries()
+              .map((e) => ({ n: e.n, title: e.title, url: e.url }));
+            await settleReport(
+              {
+                fetchFn: fetch,
+                svc,
+                origin: renderOrigin,
+                cookie: forwardCookie,
+              },
+              {
+                artifactId,
+                carrierMsgId,
+                title: q.title,
+                markdown: q.markdown,
+                sources: registrySources,
+                userId,
+                chatId: finalChatId,
+              },
+            );
+          } catch (err) {
+            // Unexpected throw → degraded settle (never-pending, T-3-52).
+            console.error(
+              `[artifact] run=${runIdStr} deferred settle threw:`,
+              err instanceof Error ? err.name : "error",
+            );
+            if (artifactId) {
+              try {
+                await svc
+                  .from("artifacts")
+                  .update({ status: "degraded" })
+                  .eq("id", artifactId);
+                if (carrierMsgId) {
+                  await svc
+                    .from("messages")
+                    .update({
+                      content: artifactCarrierPayload(artifactId, q.title, "degraded"),
+                    })
+                    .eq("id", carrierMsgId);
+                }
+              } catch (settleErr) {
+                console.error(
+                  `[artifact] run=${runIdStr} degraded fallback write failed:`,
+                  settleErr instanceof Error ? settleErr.name : "error",
+                );
+              }
+            }
+          }
+        });
       // Outlive the client connection — the loop must keep persisting even if
       // the tab closed (CHAT-08 / D-25).
       waitUntil(task);

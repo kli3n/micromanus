@@ -144,6 +144,12 @@ export interface AgentTools {
   ): Promise<{ text: string; domain: string; tokensApprox: number; title?: string }>;
 }
 
+/** Intent recorded by a create_pdf_report call (D-44): title + report body. */
+export interface QueuedReport {
+  title: string;
+  markdown: string;
+}
+
 export interface RunAgentLoopParams {
   runId: string;
   chatId: string;
@@ -161,6 +167,15 @@ export interface RunAgentLoopParams {
    * Optional: a caller that omits it gets a fresh private registry.
    */
   sources?: SourceRegistry;
+  /**
+   * Mutable queued-report slot (D-44): a create_pdf_report call records
+   * {title, markdown} here and returns "report queued" SYNCHRONOUSLY — the
+   * Chromium render fires AFTER the run reaches terminal, inside the route's
+   * waitUntil, never inside the 240s budget (Pitfall 5). At the terminal
+   * write, a markdown shorter than 200 chars is replaced with the stripped
+   * terminal answer body (weak-model guard — Open Question 2 resolved).
+   */
+  report?: { queued?: QueuedReport };
   /** Injectable clock (unit tests); defaults to Date.now. */
   now?: () => number;
 }
@@ -196,6 +211,10 @@ export const CLEAN_STOP_REASONS: ReadonlySet<string> = new Set([
 // ============================ Tool definitions + arg schemas ============================
 export const webSearchArgs = z.object({ query: z.string().min(1) });
 export const fetchPageArgs = z.object({ url: z.string().min(1) });
+export const createPdfReportArgs = z.object({
+  title: z.string().min(1).max(200),
+  markdown: z.string().min(1),
+});
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
@@ -226,6 +245,30 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           url: { type: "string", description: "An absolute http(s) URL to read." },
         },
         required: ["url"],
+        additionalProperties: false,
+      },
+    },
+  },
+  // MODULE-LEVEL entry like the two above — never conditional, never rebuilt
+  // per request. Tools render at cache prefix position 0, so ANY variation
+  // invalidates the whole cache every turn (Pitfall 7 / RESEARCH Pattern 2).
+  {
+    type: "function",
+    function: {
+      name: "create_pdf_report",
+      description:
+        "Produce a downloadable PDF report of your findings. Call this ONCE, after " +
+        "you have gathered your sources, passing the full report body as Markdown " +
+        "with inline [n] citation markers. The numbered sources list is appended " +
+        "automatically — do not write it yourself. Returns immediately; the file is " +
+        "rendered after your answer is delivered.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short report title." },
+          markdown: { type: "string", description: "The full report body in Markdown." },
+        },
+        required: ["title", "markdown"],
         additionalProperties: false,
       },
     },
@@ -348,8 +391,22 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
     }
   };
 
+  /**
+   * Weak-model guard (Open Question 2 resolved): a model that called
+   * create_pdf_report with a stub markdown (< 200 chars trimmed) gets the
+   * run's stripped terminal answer body as the report instead — the PDF then
+   * matches what the user read. Applied at every terminal that has a body.
+   */
+  const applyWeakMarkdownFallback = (body: string): void => {
+    const q = params.report?.queued;
+    if (q && q.markdown.trim().length < 200 && body.trim().length > 0) {
+      q.markdown = body;
+    }
+  };
+
   const terminateBudget = async (): Promise<void> => {
     const body = stripPlanBlock(acc);
+    applyWeakMarkdownFallback(body);
     const content =
       body.trim().length > 0 ? `${body}\n\n${BUDGET_COPY}` : BUDGET_COPY;
     await settleMeter();
@@ -481,6 +538,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
         // stripPlanBlock at the terminal write — the SAME function strips the
         // replay push below, keeping the cached prefix byte-consistent (D-49).
         const body = stripPlanBlock(acc);
+        applyWeakMarkdownFallback(body);
         let content = body;
         if (stopReason !== undefined && !CLEAN_STOP_REASONS.has(stopReason)) {
           if (stopReason === "model_context_window_exceeded") {
@@ -518,6 +576,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
             db,
             { chatId, userId, runId, iter: iterations },
             sources,
+            params.report,
           ),
         );
       }
@@ -576,6 +635,7 @@ async function runToolCall(
   db: Db,
   ids: { chatId: string; userId: string; runId: string; iter: number },
   sources: SourceRegistry,
+  report?: { queued?: QueuedReport },
 ): Promise<string> {
   // Parse + validate the model's JSON arguments BEFORE executing (V5 / AGENT-05).
   let rawArgs: unknown;
@@ -675,6 +735,37 @@ async function runToolCall(
       });
       return `fetch_page(${url}) failed: ${reason}`;
     }
+  }
+
+  if (tc.name === "create_pdf_report") {
+    const parsed = createPdfReportArgs.safeParse(rawArgs);
+    if (!parsed.success) {
+      return `create_pdf_report → invalid tool arguments: ${parsed.error.issues[0]?.message ?? "bad input"}; skipped.`;
+    }
+    // D-44: record intent + markdown and return SYNCHRONOUSLY — nothing is
+    // rendered here. The Chromium render fires after the run reaches terminal,
+    // inside the route's waitUntil (Pitfall 5: the 5–15s cold start must never
+    // live inside the 240s budget). Consumes one iteration like any other tool
+    // call, no special-casing (D-45).
+    const rowId = await emitToolStatus(send, db, ids, {
+      id: tc.id,
+      tool: "create_pdf_report",
+      state: "running",
+      label: "Preparing report", // UI-SPEC locked copy — do not reword
+      meta: "renders after the run",
+    });
+    if (report) {
+      report.queued = { title: parsed.data.title, markdown: parsed.data.markdown };
+    }
+    await resolveToolStatus(send, db, rowId, {
+      id: tc.id,
+      tool: "create_pdf_report",
+      state: "done",
+      label: "Report queued", // UI-SPEC locked copy — do not reword
+      meta: "renders after the run",
+      title: parsed.data.title,
+    });
+    return "report queued — it will appear as a download below your answer";
   }
 
   return `unknown tool "${tc.name}"; skipped.`;

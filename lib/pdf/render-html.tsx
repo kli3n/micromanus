@@ -21,10 +21,21 @@
  * renders as inert text). Styling is minimal by decision D-41 — no title
  * page, no branding (a branded template is deferred to Phase 5).
  */
-import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+// react-dom's server entries are all gated behind the `react-server` export
+// condition (react-dom@19 maps every ./server* subpath to an EMPTY
+// server.react-server.js under it), and Turbopack applies that condition to
+// the whole app-route layer — so a static import resolves to a module with no
+// exports and the build fails. `turbopackIgnore` keeps this ONE import as a
+// runtime dynamic import: Node then resolves it with plain node conditions →
+// the real server.node.js. This route is nodejs-only (CM-7), the specifier is
+// a literal (Vercel's file tracing still follows it), and Vitest resolves it
+// natively — module-level await keeps both exported functions synchronous.
+const { renderToStaticMarkup } = (await import(
+  /* turbopackIgnore: true */ "react-dom/server.node"
+)) as typeof import("react-dom/server.node");
 export interface ReportSource {
   n: number;
   title: string;
