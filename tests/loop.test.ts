@@ -56,6 +56,7 @@ function fakeDb() {
     updateMessageContent: [] as { id: string; content: string }[],
     markFirstModelCall: [] as string[],
     setRunStatus: [] as { runId: string; status: string; iterations?: number }[],
+    setRunIterations: [] as { runId: string; iterations: number }[],
     insertUsageEvent: [] as unknown[],
     refundRun: [] as string[],
     insertToolMessage: [] as { content: string }[],
@@ -72,6 +73,9 @@ function fakeDb() {
     },
     async setRunStatus(runId: string, status: string, iterations?: number) {
       calls.setRunStatus.push({ runId, status, iterations });
+    },
+    async setRunIterations(runId: string, iterations: number) {
+      calls.setRunIterations.push({ runId, iterations });
     },
     async insertUsageEvent(row: unknown) {
       calls.insertUsageEvent.push(row);
@@ -152,8 +156,11 @@ describe("runAgentLoop — think→act→observe (AGENT-01..05, PAY-06, D-28)", 
 
     expect(model.calls).toHaveLength(2);
     expect(searchSpy).toHaveBeenCalledWith("EU AI Act");
-    // tool_status running then done for the search.
-    const toolStatuses = s.events.filter((e) => e.event === "tool_status");
+    // tool_status running then done for the search (kind-discriminated plan /
+    // meter payloads ride the same event — filter to the plain tool lines).
+    const toolStatuses = s.events.filter(
+      (e) => e.event === "tool_status" && (e.data as { kind?: string }).kind == null,
+    );
     expect(toolStatuses.map((e) => (e.data as { state: string }).state)).toEqual([
       "running",
       "done",
@@ -400,6 +407,385 @@ describe("clean-finish guard (AI-SPEC New Risk #1 / EV-11)", () => {
     expect(last.content).toContain(CONTEXT_TOO_LONG_COPY);
     expect(JSON.stringify(s.events)).not.toContain(RAW);
     expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
+  });
+});
+
+// ============================ 03-04 additions ============================
+
+type KindPayload = {
+  id?: string;
+  kind?: string;
+  state?: string;
+  items?: string[];
+  startedAt?: string;
+  iterations?: number;
+  elapsedMs?: number;
+  n?: number;
+  title?: string;
+  results?: { title: string; url: string; domain: string }[];
+  tool?: string;
+};
+
+/** All persisted tool-row payloads (insert + update), JSON-parsed. */
+function rowPayloads(db: ReturnType<typeof fakeDb>): KindPayload[] {
+  return [
+    ...db.calls.insertToolMessage.map((r) => JSON.parse(r.content) as KindPayload),
+    ...db.calls.updateToolMessage.map((r) => JSON.parse(r.content) as KindPayload),
+  ];
+}
+
+describe("per-pass iteration writes + meter carrier (STAT-06, Correction C2, D-56)", () => {
+  it("calls setRunIterations once per pass with 1,2,3… — including the tool pass — BEFORE each model stream", async () => {
+    const seq: string[] = [];
+    const db = fakeDb();
+    const origSetIter = db.setRunIterations.bind(db);
+    db.setRunIterations = async (runId: string, n: number) => {
+      seq.push(`iter:${n}`);
+      await origSetIter(runId, n);
+    };
+    const inner = scriptedModel([
+      { toolCalls: [web_search("tc1", "q")], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+    const model = {
+      calls: inner.calls,
+      run(messages: ChatMessage[]) {
+        seq.push("model");
+        return inner.run(messages);
+      },
+    };
+
+    await runAgentLoop(baseParams(() => {}, db, model as never, fakeTools()));
+
+    expect(db.calls.setRunIterations).toEqual([
+      { runId: "r1", iterations: 1 },
+      { runId: "r1", iterations: 2 },
+    ]);
+    expect(seq).toEqual(["iter:1", "model", "iter:2", "model"]);
+  });
+
+  it("sends a meter SSE event with the pass number at the top of every pass", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const model = scriptedModel([
+      { toolCalls: [web_search("tc1", "q")], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    const meters = s.events.filter((e) => e.event === "meter");
+    expect(meters.map((e) => (e.data as { iterations: number }).iterations)).toEqual([
+      1, 2,
+    ]);
+  });
+
+  it("emits a meter carrier row at loop start and settles it with iterations + server-computed elapsedMs on success", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const model = scriptedModel([{ deltas: ["Answer."], usage: USAGE }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    const inserted = db.calls.insertToolMessage
+      .map((r) => JSON.parse(r.content) as KindPayload)
+      .filter((p) => p.kind === "meter");
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].state).toBe("running");
+    expect(typeof inserted[0].startedAt).toBe("string");
+    expect(inserted[0].id).toBeTruthy();
+
+    const settled = db.calls.updateToolMessage
+      .map((r) => JSON.parse(r.content) as KindPayload)
+      .filter((p) => p.kind === "meter");
+    expect(settled).toHaveLength(1);
+    expect(settled[0].state).toBe("done");
+    expect(settled[0].iterations).toBe(1);
+    expect(typeof settled[0].elapsedMs).toBe("number");
+    expect(settled[0].startedAt).toBe(inserted[0].startedAt);
+
+    // The live tab saw the same two payloads over tool_status SSE.
+    const sse = s.events
+      .filter((e) => e.event === "tool_status")
+      .map((e) => e.data as KindPayload)
+      .filter((p) => p.kind === "meter");
+    expect(sse.map((p) => p.state)).toEqual(["running", "done"]);
+  });
+
+  it("settles the meter carrier on budget exhaust (12-iteration cap)", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([{ toolCalls: [web_search("tc", "loop")], usage: USAGE }]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    const settled = rowPayloads(db).filter(
+      (p) => p.kind === "meter" && p.state === "done",
+    );
+    expect(settled).toHaveLength(1);
+    expect(settled[0].iterations).toBe(12);
+    expect(db.calls.setRunIterations).toHaveLength(12);
+  });
+
+  it("settles the meter carrier on a failed run (catch path)", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    const settled = rowPayloads(db).filter(
+      (p) => p.kind === "meter" && p.state === "done",
+    );
+    expect(settled).toHaveLength(1);
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
+  });
+});
+
+describe("plan-block detection (RSCH-01, D-31/D-33/D-52)", () => {
+  const PLAN_DELTAS = [
+    "Let me plan.\n\n```plan\n1. First",
+    " question\n2. Second question\n```",
+    "\n\nStarting research now.",
+  ];
+
+  it("persists exactly ONE {kind:'plan'} row when the first turn streams a fence across deltas (re-scans never duplicate)", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const model = scriptedModel([
+      { deltas: PLAN_DELTAS, toolCalls: [web_search("tc1", "q")], usage: USAGE },
+      { deltas: ["Final."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    const planRows = db.calls.insertToolMessage
+      .map((r) => JSON.parse(r.content) as KindPayload)
+      .filter((p) => p.kind === "plan");
+    expect(planRows).toHaveLength(1);
+    expect(planRows[0]).toMatchObject({
+      kind: "plan",
+      state: "done",
+      items: ["First question", "Second question"],
+    });
+    expect(planRows[0].id).toBeTruthy();
+    // The same payload went out as a tool_status SSE event.
+    const sse = s.events
+      .filter((e) => e.event === "tool_status")
+      .map((e) => e.data as KindPayload)
+      .filter((p) => p.kind === "plan");
+    expect(sse).toHaveLength(1);
+  });
+
+  it("creates NO plan row when the fence arrives on a later turn (first-turn-only)", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([
+      { toolCalls: [web_search("tc1", "q")], usage: USAGE }, // iter 0: no fence
+      {
+        deltas: ["```plan\n1. Late plan\n```"],
+        toolCalls: [web_search("tc2", "r")],
+        usage: USAGE,
+      },
+      { deltas: ["Final."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    expect(rowPayloads(db).filter((p) => p.kind === "plan")).toHaveLength(0);
+  });
+
+  it("creates no row, no card, no error when no fence streams (graceful absence)", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([{ deltas: ["Plain answer."], usage: USAGE }]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    expect(rowPayloads(db).filter((p) => p.kind === "plan")).toHaveLength(0);
+    expect(db.calls.updateMessageContent.at(-1)!.content).toBe("Plain answer.");
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "succeeded" });
+  });
+
+  it("strips the fence from the terminal write (terminal content == stripPlanBlock(acc))", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([
+      { deltas: ["```plan\n1. A\n2. B\n```\n\n", "The answer."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    expect(db.calls.updateMessageContent.at(-1)!.content).toBe("The answer.");
+  });
+
+  it("strips the fence from the assistant turn pushed into conversation for the next turn (same function, both paths)", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([
+      { deltas: PLAN_DELTAS, toolCalls: [web_search("tc1", "q")], usage: USAGE },
+      { deltas: ["Final."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    const secondCall = model.calls[1];
+    const assistant = secondCall.find((m) => m.role === "assistant");
+    expect(assistant).toBeDefined();
+    expect(assistant!.content).not.toContain("```plan");
+    expect(assistant!.content).toContain("Let me plan.");
+    expect(assistant!.content).toContain("Starting research now.");
+  });
+});
+
+describe("source numbering + web_search results (RSCH-02, D-35/D-36)", () => {
+  const fetch_page = (id: string, url: string): ToolCallRequest => ({
+    id,
+    name: "fetch_page",
+    arguments: JSON.stringify({ url }),
+  });
+
+  it("assigns [n] on fetch_page success, echoes it into the observation, and grows the registry", async () => {
+    const { createSourceRegistry } = await import("@/lib/agent/sources");
+    const s = collectSend();
+    const db = fakeDb();
+    const reg = createSourceRegistry();
+    const model = scriptedModel([
+      { toolCalls: [fetch_page("tc1", "https://ok.io/a")], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop({
+      ...baseParams(s.send, db, model, fakeTools()),
+      sources: reg,
+    });
+
+    // Observation fed to the next model call opens with the assigned marker.
+    const obs = JSON.stringify(model.calls[1]);
+    expect(obs).toContain("[1] fetch_page(https://ok.io/a)");
+    expect(obs).toContain("Cite this source as [1].");
+    expect(reg.size()).toBe(1);
+    // Resolved tool_status payload carries n + title.
+    const done = s.events
+      .map((e) => e.data as KindPayload)
+      .find((p) => p.tool === "fetch_page" && p.state === "done");
+    expect(done).toBeDefined();
+    expect(done!.n).toBe(1);
+    expect(typeof done!.title).toBe("string");
+  });
+
+  it("a throwing fetch consumes NO number and keeps the existing failure observation", async () => {
+    const db = fakeDb();
+    const { createSourceRegistry } = await import("@/lib/agent/sources");
+    const reg = createSourceRegistry();
+    const tools = fakeTools({
+      fetch_page: async (url: string) => {
+        if (url.includes("bad")) throw new Error("could not fetch the page");
+        return { text: "ok", domain: "ok.io", tokensApprox: 1 };
+      },
+    });
+    const model = scriptedModel([
+      {
+        toolCalls: [
+          fetch_page("tc1", "https://bad.io/x"),
+          fetch_page("tc2", "https://ok.io/a"),
+        ],
+        usage: USAGE,
+      },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop({ ...baseParams(() => {}, db, model, tools), sources: reg });
+
+    const obs = JSON.stringify(model.calls[1]);
+    expect(obs).toContain("fetch_page(https://bad.io/x) failed:");
+    // The failed fetch minted nothing — the successful one got [1].
+    expect(obs).toContain("[1] fetch_page(https://ok.io/a)");
+    expect(reg.size()).toBe(1);
+    expect(reg.entries().map((e) => e.n)).toEqual([1]);
+  });
+
+  it("the same URL fetched twice reuses its number", async () => {
+    const db = fakeDb();
+    const { createSourceRegistry } = await import("@/lib/agent/sources");
+    const reg = createSourceRegistry();
+    const model = scriptedModel([
+      {
+        toolCalls: [
+          fetch_page("tc1", "https://Example.com/a/"),
+          fetch_page("tc2", "https://example.com/a#frag"),
+        ],
+        usage: USAGE,
+      },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop({
+      ...baseParams(() => {}, db, model, fakeTools()),
+      sources: reg,
+    });
+
+    const obs = JSON.stringify(model.calls[1]);
+    expect(reg.size()).toBe(1);
+    expect(obs).toContain("[1] fetch_page(https://Example.com/a/)");
+    expect(obs).toContain("[1] fetch_page(https://example.com/a#frag)");
+    expect(obs).not.toContain("[2] fetch_page");
+  });
+
+  it("web_search done payload carries results[] {title,url,domain} (<=8) for 'Also found' — never numbered", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const tools = fakeTools({
+      web_search: async () => ({
+        results: [
+          { title: "One", url: "https://a.io/one", snippet: "s1" },
+          { title: "Two", url: "https://b.example.org/two", snippet: "s2" },
+        ],
+        note: undefined,
+      }),
+    });
+    const model = scriptedModel([
+      { toolCalls: [web_search("tc1", "q")], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(s.send, db, model, tools));
+
+    const done = s.events
+      .map((e) => e.data as KindPayload)
+      .find((p) => p.tool === "web_search" && p.state === "done");
+    expect(done).toBeDefined();
+    expect(done!.results).toEqual([
+      { title: "One", url: "https://a.io/one", domain: "a.io" },
+      { title: "Two", url: "https://b.example.org/two", domain: "b.example.org" },
+    ]);
+    expect(done!.n).toBeUndefined(); // search hits are never numbered (D-36)
+    // The persisted done row carries the same results payload.
+    const row = db.calls.updateToolMessage
+      .map((r) => JSON.parse(r.content) as KindPayload)
+      .find((p) => p.tool === "web_search" && p.state === "done");
+    expect(row?.results).toHaveLength(2);
+  });
+
+  it("three fetch_page calls in one turn = ONE iteration, three sequential observations (parallel dispatch preserved)", async () => {
+    const db = fakeDb();
+    const model = scriptedModel([
+      {
+        toolCalls: [
+          fetch_page("tc1", "https://a.io/1"),
+          fetch_page("tc2", "https://b.io/2"),
+          fetch_page("tc3", "https://c.io/3"),
+        ],
+        usage: USAGE,
+      },
+      { deltas: ["Synthesis."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+    expect(model.calls).toHaveLength(2); // one tool pass + one final pass
+    expect(db.calls.setRunIterations.map((c) => c.iterations)).toEqual([1, 2]);
+    const obs = model.calls[1].find((m) =>
+      m.content.startsWith("Tool observations:"),
+    );
+    expect(obs).toBeDefined();
+    expect(obs!.content).toContain("[1] fetch_page(https://a.io/1)");
+    expect(obs!.content).toContain("[2] fetch_page(https://b.io/2)");
+    expect(obs!.content).toContain("[3] fetch_page(https://c.io/3)");
   });
 });
 
