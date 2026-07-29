@@ -1,10 +1,16 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { costUsd } from "@/lib/pricing";
+import { costUsd, savingsUsd } from "@/lib/pricing";
 import { getModel } from "@/lib/registry";
 
 /**
- * /app/stats — Cost & usage (STAT-02, STAT-03, UX-02; D-16).
+ * /app/stats — Cost & usage (STAT-02, STAT-03, STAT-05, UX-02; D-16).
+ *
+ * STAT-05 (D-53/D-54): cache savings are a GROSS derivation over the same
+ * stored event-time price columns — savingsUsd(cache_read_tokens,
+ * input_price_per_1m, cache_read_price_per_1m) — shown at three levels
+ * (all-time tile + headline note, per-chat "Saved" column, per-run sentence).
+ * Never netted against cache-write cost; never priced from the registry.
  *
  * A read-only async Server Component (renders on the server only): every number comes from
  * rows the run handler (02-05) already wrote into the schema owned by 02-01
@@ -175,6 +181,7 @@ export default async function StatsPage() {
     outputUsd: 0,
     cacheReadUsd: 0,
     cacheWriteUsd: 0,
+    savedUsd: 0,
   };
   const chatIds = new Set<string>();
   const runIds = new Set<string>();
@@ -193,6 +200,11 @@ export default async function StatsPage() {
     totals.cacheWriteUsd += classDollar(
       u.cache_write_tokens,
       u.cache_write_price_per_1m,
+    );
+    totals.savedUsd += savingsUsd(
+      u.cache_read_tokens,
+      u.input_price_per_1m,
+      u.cache_read_price_per_1m,
     );
     if (u.chat_id) chatIds.add(u.chat_id);
     if (u.run_id) runIds.add(u.run_id);
@@ -216,6 +228,7 @@ export default async function StatsPage() {
     cacheRead: number;
     cacheWrite: number;
     cost: number;
+    saved: number;
     messages: number;
   }
   const chatAggMap = new Map<string, ChatAgg>();
@@ -232,6 +245,7 @@ export default async function StatsPage() {
         cacheRead: 0,
         cacheWrite: 0,
         cost: 0,
+        saved: 0,
         messages: messageCount.get(u.chat_id) ?? 0,
       };
       chatAggMap.set(u.chat_id, agg);
@@ -241,6 +255,11 @@ export default async function StatsPage() {
     agg.cacheRead += safe(u.cache_read_tokens);
     agg.cacheWrite += safe(u.cache_write_tokens);
     agg.cost += safe(u.cost_usd);
+    agg.saved += savingsUsd(
+      u.cache_read_tokens,
+      u.input_price_per_1m,
+      u.cache_read_price_per_1m,
+    );
   }
   const chatAggs = [...chatAggMap.values()].sort((a, b) => b.cost - a.cost);
 
@@ -258,6 +277,7 @@ export default async function StatsPage() {
     cacheRead: number;
     cacheWrite: number;
     cost: number;
+    saved: number;
     hasPrices: boolean;
     inputPrice: number;
     outputPrice: number;
@@ -318,6 +338,7 @@ export default async function StatsPage() {
       cacheRead: 0,
       cacheWrite: 0,
       cost: 0,
+      saved: 0,
       hasPrices: rows.length > 0,
       inputPrice: safe(first?.input_price_per_1m),
       outputPrice: safe(first?.output_price_per_1m),
@@ -330,6 +351,11 @@ export default async function StatsPage() {
       agg.cacheRead += safe(u.cache_read_tokens);
       agg.cacheWrite += safe(u.cache_write_tokens);
       agg.cost += safe(u.cost_usd);
+      agg.saved += savingsUsd(
+        u.cache_read_tokens,
+        u.input_price_per_1m,
+        u.cache_read_price_per_1m,
+      );
     }
     const list = runsByChat.get(run.chat_id);
     if (list) list.push(agg);
@@ -338,7 +364,15 @@ export default async function StatsPage() {
 
   const hasUsage = usage.length > 0;
 
-  const tiles: { label: string; value: string; sub: string; accent?: boolean }[] =
+  const hasSavings = totals.savedUsd > 0;
+
+  const tiles: {
+    label: string;
+    value: string;
+    sub: string;
+    accent?: boolean;
+    tone?: "success" | "muted";
+  }[] =
     [
       {
         label: "All-time spend",
@@ -367,6 +401,13 @@ export default async function StatsPage() {
         label: "Cache write",
         value: formatTokens(totals.cacheWrite),
         sub: formatUsd(totals.cacheWriteUsd),
+      },
+      {
+        // STAT-05 (D-53): GROSS savings, muted $0.000 at zero — never green.
+        label: "Cache savings",
+        value: hasSavings ? `~${formatUsd(totals.savedUsd)}` : formatUsd(0),
+        sub: "cache read vs. input price",
+        tone: hasSavings ? "success" : "muted",
       },
     ];
 
@@ -419,7 +460,9 @@ export default async function StatsPage() {
               <div key={t.label} className="stats-tile">
                 <div className="stats-tile-label">{t.label}</div>
                 <div
-                  className={`stats-tile-value${t.accent ? " accent" : ""}`}
+                  className={`stats-tile-value${t.accent ? " accent" : ""}${
+                    t.tone ? ` ${t.tone}` : ""
+                  }`}
                 >
                   {t.value}
                 </div>
@@ -427,6 +470,15 @@ export default async function StatsPage() {
               </div>
             ))}
           </div>
+
+          {/* STAT-05 headline note — locked copy, GROSS figure (D-53). */}
+          <p className="stats-savings-note">
+            {hasSavings
+              ? `Cache read saved ~${formatUsd(
+                  totals.savedUsd,
+                )} across all runs. Cache-write cost is shown in its own tile.`
+              : "No cached tokens yet — savings appear once a provider reports cache reads."}
+          </p>
 
           {/* Per-chat cost table (STAT-02) — CSS grid, header + one row per chat. */}
           <div className="stats-scroll">
@@ -438,6 +490,7 @@ export default async function StatsPage() {
             <span className="num">Output</span>
             <span className="num">Cache read</span>
             <span className="num">Cache write</span>
+            <span className="num">Saved</span>
             <span className="num">Cost</span>
           </div>
           {chatAggs.map((c) => {
@@ -468,6 +521,9 @@ export default async function StatsPage() {
                   <span className="num">{formatTokens(c.output)}</span>
                   <span className="num">{formatTokens(c.cacheRead)}</span>
                   <span className="num">{formatTokens(c.cacheWrite)}</span>
+                  <span className={`num${c.saved > 0 ? " saved" : ""}`}>
+                    {formatUsd(c.saved)}
+                  </span>
                   <span className="num total">{formatUsd(c.cost)}</span>
                 </summary>
 
@@ -518,7 +574,10 @@ export default async function StatsPage() {
                             read <code>{formatPrice(r.cacheReadPrice)}</code>/1M ·
                             cache write{" "}
                             <code>{formatPrice(r.cacheWritePrice)}</code>/1M.{" "}
-                            {"Cost = Σ(tokens ÷ 1e6 × price) per class."}
+                            {"Cost = Σ(tokens ÷ 1e6 × price) per class."}{" "}
+                            {`Cache read saved ~${formatUsd(
+                              r.saved,
+                            )} on this run (gross — cache-write cost is listed above).`}
                           </p>
                         )}
                       </div>
@@ -547,15 +606,19 @@ const STATS_CSS = `
 .stats-tile-label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);margin-bottom:7px}
 .stats-tile-value{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
 .stats-tile-value.accent{color:var(--accent)}
+.stats-tile-value.success{color:var(--success)}
+.stats-tile-value.muted{color:var(--text-2)}
 .stats-tile-sub{font-size:11px;color:var(--text-3);margin-top:4px;font-variant-numeric:tabular-nums}
+.stats-savings-note{font-size:12.5px;color:var(--text-2);margin-top:-10px;margin-bottom:22px;line-height:1.5}
 .stats-scroll{overflow-x:auto}
-.stats-table{min-width:640px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.stats-thead,.stats-summary{display:grid;grid-template-columns:minmax(200px,1fr) 128px repeat(5,minmax(70px,max-content));gap:14px;align-items:center;padding:11px 16px}
+.stats-table{min-width:720px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.stats-thead,.stats-summary{display:grid;grid-template-columns:minmax(200px,1fr) 128px repeat(6,minmax(70px,max-content));gap:14px;align-items:center;padding:11px 16px}
 .stats-thead{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);background:var(--surface-2);border-bottom:1px solid var(--border)}
 .stats-summary{border-bottom:1px solid var(--border);font-size:13px}
 .stats-summary:last-child{border-bottom:0}
 .stats-thead .num,.stats-summary .num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text-2)}
 .stats-summary .num.total{font-weight:650;color:var(--text)}
+.stats-summary .num.saved{color:var(--success)}
 .stats-chat{display:flex;align-items:center;gap:8px;min-width:0}
 .stats-chat-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stats-chat-meta{font-size:11.5px;color:var(--text-3);white-space:nowrap}
