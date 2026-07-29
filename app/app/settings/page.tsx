@@ -18,14 +18,14 @@ import { ModelPicker } from "@/components/ModelPicker";
  * mount into this same page.
  */
 
-// Providers offered in the select. Anthropic is rendered disabled (OQ-1).
+// Providers offered in the select. Anthropic unlocked by Phase 3 (D-48).
 const PROVIDER_OPTIONS: { value: Provider; label: string; disabled?: boolean }[] =
   [
     { value: "openai", label: "OpenAI" },
+    { value: "anthropic", label: "Anthropic (Claude)" },
     { value: "kimi", label: "Kimi / Moonshot" },
     { value: "openrouter", label: "OpenRouter" },
     { value: "custom", label: "Custom (OpenAI-compatible)" },
-    { value: "anthropic", label: "Anthropic (Claude) · arrives soon", disabled: true },
   ];
 
 const PROVIDER_TITLE: Record<string, string> = {

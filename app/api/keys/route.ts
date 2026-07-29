@@ -73,11 +73,8 @@ export async function POST(req: Request): Promise<Response> {
     }
     const { provider, base_url, apiKey } = parsed.data;
 
-    // OQ-1: Claude is non-runnable this phase (native cache_control adapter is
-    // Phase 3; the openai-compat shim is forbidden for Claude).
-    if (provider === "anthropic") {
-      return json({ error: "Claude support arrives soon" }, 400);
-    }
+    // OQ-1 RESOLVED (Phase 3 / D-48): anthropic keys are saveable — Claude runs
+    // through the native adapter (lib/agent/models/anthropic.ts).
 
     // Encrypt with the AES-256-GCM helper (env key read lazily inside).
     const { iv, ct, tag, last4 } = encryptKey(apiKey);

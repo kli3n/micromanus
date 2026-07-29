@@ -8,10 +8,10 @@
  *   - selectable: whether the row can be chosen for a chat;
  *   - nudge:      the "add key" affordance copy (D-22) when locked.
  *
- * Contract (D-22 shows every model, never hides; OQ-1 Claude never selectable):
- *   - non-anthropic + provider key saved  -> locked=false, selectable=true
- *   - non-anthropic + no key               -> locked=true,  selectable=false, nudge
- *   - anthropic (any)                      -> locked=true,  selectable=false, nudge
+ * Contract (D-22 shows every model, never hides; OQ-1 RESOLVED by Phase 3/D-48 —
+ * Claude now follows the same rule as every other provider):
+ *   - provider key saved + spec selectable -> locked=false, selectable=true
+ *   - no key (or spec non-selectable)      -> locked=true,  selectable=false, nudge
  */
 import type { ModelSpec } from "@/lib/registry";
 
@@ -28,7 +28,7 @@ export interface RegistryRow {
   nudge?: string;
 }
 
-/** D-22 nudge copy for locked (missing-key / Claude) rows. */
+/** D-22 nudge copy for locked (missing-key) rows. */
 export const ADD_KEY_NUDGE = "add key";
 
 export function buildRegistryView(
@@ -37,9 +37,9 @@ export function buildRegistryView(
 ): RegistryRow[] {
   const saved = new Set(savedProviders);
   return models.map((m) => {
-    const isAnthropic = m.provider === "anthropic";
-    // OQ-1: Claude is never selectable this phase, regardless of a saved key.
-    const selectable = !isAnthropic && m.selectable !== false && saved.has(m.provider);
+    // D-48: Claude runs through the anthropic-native adapter now — no provider
+    // special-case; a saved key + a selectable spec is the whole rule.
+    const selectable = m.selectable !== false && saved.has(m.provider);
     const locked = !selectable;
     const row: RegistryRow = {
       id: m.id,

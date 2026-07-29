@@ -85,9 +85,9 @@ export async function POST(req: Request): Promise<Response> {
     }
     const { provider, base_url, apiKey, model } = parsed.data;
 
-    // OQ-1: Claude is non-testable this phase.
+    // Seam for future non-probeable providers (OQ-1 resolved — all testable now).
     if (!isTestableProvider(provider)) {
-      return json({ ok: false, reason: "Claude support arrives soon" });
+      return json({ ok: false, reason: "This provider cannot be tested yet" });
     }
 
     // Pick the probe model: explicit request model, else cheapest per provider.
@@ -101,6 +101,22 @@ export async function POST(req: Request): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
+      if (provider === "anthropic") {
+        // D-48/CM-3: Claude probes go through the NATIVE Messages API — the
+        // openai-compat shim is forbidden for Claude (and the default base URL
+        // has no /v1 chat-completions path anyway).
+        const AnthropicSDK = (await import("@anthropic-ai/sdk")).default;
+        const client = new AnthropicSDK({ apiKey, baseURL: base_url });
+        await client.messages.create(
+          {
+            model: probeModel,
+            max_tokens: 1,
+            messages: [{ role: "user", content: "ping" }],
+          },
+          { signal: controller.signal },
+        );
+        return json({ ok: true });
+      }
       const OpenAI = (await import("openai")).default;
       const client = new OpenAI({ apiKey, baseURL: base_url });
       await client.chat.completions.create(

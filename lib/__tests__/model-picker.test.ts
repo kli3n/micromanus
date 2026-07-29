@@ -40,7 +40,7 @@ const fixture: ModelSpec[] = [
     cacheReadPer1M: 0.5,
     cacheWritePer1M: 6.25,
     contextTokens: 1_000_000,
-    selectable: false,
+    selectable: true, // unlocked by Phase 3 (D-48)
   },
 ];
 
@@ -77,12 +77,21 @@ describe("buildRegistryView (D-22 grey-out / OQ-1)", () => {
     expect(kimi.nudge).toBe("add key");
   });
 
-  it("never marks an anthropic model selectable — even if 'anthropic' were saved (OQ-1)", () => {
+  it("marks an anthropic model selectable once its key is saved (OQ-1 resolved — D-48)", () => {
     const view = buildRegistryView(fixture, ["anthropic", "openai"]);
     const claude = view.find((r) => r.id === "claude-opus-4-8")!;
-    expect(claude.selectable).toBe(false);
+    expect(claude.selectable).toBe(true);
+    expect(claude.locked).toBe(false);
     // Row still present (D-22 shows, never hides).
     expect(view).toHaveLength(fixture.length);
+  });
+
+  it("still locks an anthropic model when no anthropic key is saved", () => {
+    const view = buildRegistryView(fixture, ["openai"]);
+    const claude = view.find((r) => r.id === "claude-opus-4-8")!;
+    expect(claude.selectable).toBe(false);
+    expect(claude.locked).toBe(true);
+    expect(claude.nudge).toBe("add key");
   });
 
   it("locks everything when no provider key is saved", () => {

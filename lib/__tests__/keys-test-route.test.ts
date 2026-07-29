@@ -43,14 +43,14 @@ describe("probeErrorCopy (UX-01 fixed failure copy)", () => {
   });
 });
 
-describe("isTestableProvider (OQ-1)", () => {
+describe("isTestableProvider (OQ-1 resolved — D-48)", () => {
   it("is true for openai, kimi, custom", () => {
     expect(isTestableProvider("openai")).toBe(true);
     expect(isTestableProvider("kimi")).toBe(true);
     expect(isTestableProvider("custom")).toBe(true);
   });
 
-  it("is false for anthropic (Claude non-runnable this phase)", () => {
-    expect(isTestableProvider("anthropic")).toBe(false);
+  it("is true for anthropic (Claude probed via the native Messages API since Phase 3)", () => {
+    expect(isTestableProvider("anthropic")).toBe(true);
   });
 });

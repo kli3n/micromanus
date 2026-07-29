@@ -24,7 +24,13 @@ export function probeErrorCopy(status: number): string {
   return COPY_GENERIC;
 }
 
-/** OQ-1: every provider is testable EXCEPT anthropic (Claude non-runnable now). */
+/**
+ * OQ-1 RESOLVED (Phase 3 / D-48): every provider is testable, including
+ * anthropic — the probe route branches to the NATIVE Messages API for Claude
+ * (the openai-compat shim is forbidden for Claude, CM-3). Kept as the seam for
+ * any future non-probeable provider.
+ */
 export function isTestableProvider(provider: string): boolean {
-  return provider !== "anthropic";
+  void provider;
+  return true;
 }
