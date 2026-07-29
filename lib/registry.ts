@@ -11,9 +11,11 @@
  * table values are used verbatim. (This slice has no live web-fetch tooling; any
  * future provider price change should be reflected here with a dated delta comment.)
  *
- * OQ-1: every Claude model is `selectable: false` — the Anthropic NATIVE adapter
- * (cache_control) lands in Phase 3, and the OpenAI-compat shim is forbidden for
- * Claude (drops cache usage). OpenAI/Kimi are openai-compat and selectable now.
+ * OQ-1 (RESOLVED by Phase 3 / D-48): the Claude models are now `selectable: true`
+ * — the Anthropic NATIVE adapter (lib/agent/models/anthropic.ts, cache_control
+ * breakpoints + finalMessage usage merge) landed in Phase 3. The OpenAI-compat
+ * shim remains forbidden for Claude (drops cache usage — CM-3). OpenAI/Kimi/
+ * OpenRouter stay openai-compat.
  */
 
 export type Provider = "anthropic" | "openai" | "kimi" | "openrouter" | "custom";
@@ -31,8 +33,9 @@ export interface ModelSpec {
 }
 
 export const MODEL_REGISTRY: ModelSpec[] = [
-  // ---- Anthropic (Claude) — selectable:false until the Phase-3 native adapter ----
-  // cacheWritePer1M is the 5-minute cache-write rate from the CLAUDE.md table.
+  // ---- Anthropic (Claude) — unlocked by the Phase-3 native adapter (D-48) ----
+  // cacheWritePer1M is the 5-minute cache-write rate from the CLAUDE.md table
+  // (prices verified consistent with the 1.25x write / 0.1x read multipliers).
   {
     id: "claude-opus-4-8",
     provider: "anthropic",
@@ -42,7 +45,7 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     cacheReadPer1M: 0.5,
     cacheWritePer1M: 6.25,
     contextTokens: 1_000_000,
-    selectable: false,
+    selectable: true,
   },
   {
     id: "claude-sonnet-4-6",
@@ -53,7 +56,7 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     cacheReadPer1M: 0.3,
     cacheWritePer1M: 3.75,
     contextTokens: 1_000_000,
-    selectable: false,
+    selectable: true,
   },
   {
     id: "claude-haiku-4-5",
@@ -64,7 +67,7 @@ export const MODEL_REGISTRY: ModelSpec[] = [
     cacheReadPer1M: 0.1,
     cacheWritePer1M: 1.25,
     contextTokens: 200_000,
-    selectable: false,
+    selectable: true,
   },
 
   // ---- OpenAI — openai-compat; cacheWritePer1M = 0 (no separate write charge) ----

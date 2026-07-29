@@ -42,13 +42,9 @@ describe("MODEL_REGISTRY (KEY-04)", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("marks all anthropic models non-selectable and all openai/kimi selectable", () => {
+  it("marks EVERY registry model selectable — Claude unlocked by the Phase-3 native adapter (D-48)", () => {
     for (const m of MODEL_REGISTRY) {
-      if (m.provider === "anthropic") {
-        expect(m.selectable, `${m.id} selectable`).toBe(false);
-      } else {
-        expect(m.selectable, `${m.id} selectable`).toBe(true);
-      }
+      expect(m.selectable, `${m.id} selectable`).toBe(true);
     }
   });
 

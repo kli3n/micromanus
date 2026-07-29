@@ -146,6 +146,28 @@ const BUDGET_MS = 240_000; // AGENT-02 / D-28 (before the 300s platform cap)
 /** Locked degrade copy (D-28 / 02-UI-SPEC "Budget exhausted"). Do not reword. */
 const BUDGET_COPY = "ran out of compute time (i)";
 
+/** Locked incomplete-finish copy (AI-SPEC New Risk #1 / EV-11). Do not reword. */
+export const INCOMPLETE_COPY =
+  "\n\n_This answer may be incomplete — the model hit an output limit before finishing._";
+/** Locked context-overflow copy (EV-11). Do not reword. */
+export const CONTEXT_TOO_LONG_COPY =
+  "This conversation got too long for the model — start a new chat to continue.";
+
+/**
+ * Stop/finish reasons that mean a CLEAN terminal finish. Matched as an
+ * allow-list (never by enumerating the bad ones — `stop_reason` gained values
+ * recently): Anthropic end_turn/stop_sequence/tool_use, openai-compat
+ * stop/tool_calls. An UNDEFINED stopReason counts as clean — lenient providers
+ * may omit it entirely.
+ */
+export const CLEAN_STOP_REASONS: ReadonlySet<string> = new Set([
+  "end_turn",
+  "stop_sequence",
+  "tool_use",
+  "stop",
+  "tool_calls",
+]);
+
 // ============================ Tool definitions + arg schemas ============================
 export const webSearchArgs = z.object({ query: z.string().min(1) });
 export const fetchPageArgs = z.object({ url: z.string().min(1) });
@@ -218,6 +240,15 @@ function mapProviderError(err: unknown): { code: string; message: string } {
       code: "rate_limited",
       message: "The provider is rate-limiting your key. Wait a moment and try again.",
     };
+  // Context-window overflow surfaces as a provider 400 on some paths (instead of
+  // a stop_reason) — route it to the same actionable copy (EV-11). The message is
+  // only pattern-TESTED here; it is never included in the output.
+  if (status === 400) {
+    const msg = (err as { message?: string } | null)?.message ?? "";
+    if (/context|too long|maximum.*tokens/i.test(msg)) {
+      return { code: "context_too_long", message: CONTEXT_TOO_LONG_COPY };
+    }
+  }
   if (typeof status === "number" && status >= 500)
     return {
       code: "provider_error",
@@ -286,6 +317,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
       // ---- Model call (stream) ----
       acc = "";
       let usage: NormalizedUsage | undefined;
+      let stopReason: string | undefined;
       const toolCalls: ToolCallRequest[] = [];
 
       for await (const chunk of model.run(conversation, TOOL_DEFINITIONS)) {
@@ -302,6 +334,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
           toolCalls.push(...chunk.toolCalls);
         }
         if (chunk.usage) usage = chunk.usage;
+        if (chunk.stopReason) stopReason = chunk.stopReason;
       }
       // A model call that yielded no delta (tool-only turn) still completed.
       await ensureFirstMarked();
@@ -337,7 +370,22 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
 
       // ---- No tool calls => final answer. ----
       if (toolCalls.length === 0) {
-        await db.updateMessageContent(assistantMsgId, acc);
+        // Clean-finish guard (New Risk #1 / EV-11): a terminal turn whose stop
+        // reason falls outside the clean allow-list must NOT masquerade as a
+        // finished answer — append the locked degrade copy at the terminal
+        // write. Context-window overflow gets its own actionable copy.
+        let content = acc;
+        if (stopReason !== undefined && !CLEAN_STOP_REASONS.has(stopReason)) {
+          if (stopReason === "model_context_window_exceeded") {
+            content =
+              acc.trim().length > 0
+                ? `${acc}\n\n${CONTEXT_TOO_LONG_COPY}`
+                : CONTEXT_TOO_LONG_COPY;
+          } else {
+            content = `${acc}${INCOMPLETE_COPY}`;
+          }
+        }
+        await db.updateMessageContent(assistantMsgId, content);
         await db.setRunStatus(runId, "succeeded", iterations);
         send("done", { runId, status: "succeeded" });
         return;
