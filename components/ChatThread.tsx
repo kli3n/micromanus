@@ -643,7 +643,21 @@ export function ChatThread({
           void settleFromDb();
         },
       )
-      .subscribe();
+      // Join observability (CHAT-08). `.subscribe()` without a status callback
+      // swallows CHANNEL_ERROR / TIMED_OUT / CLOSED entirely — including the
+      // case where the server REJECTS a postgres_changes binding (realtime-js
+      // RealtimeChannel.ts:469-473 unsubscribes and errors the channel when the
+      // echoed filter set does not match what was requested). A silent channel
+      // is indistinguishable from an idle one, which is exactly how the G-1
+      // freeze hid. This logs and NOTHING else: no React state, no banner, no
+      // toast, no unread marker (D-25/D-26 — reconnect stays seamless). Log
+      // arguments are the status string and the chat id ONLY — never a token,
+      // session, or row payload (T-03-08-02).
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") {
+          console.error("[chat-realtime] channel status", status, activeChatId);
+        }
+      });
     return () => {
       supabase.removeChannel(channel);
     };
