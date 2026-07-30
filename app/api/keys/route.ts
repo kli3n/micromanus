@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { encryptKey } from "@/lib/crypto";
 import { toKeyMetadata } from "@/lib/keys/metadata";
+import { baseUrlSchema, BASE_URL_REJECTED } from "@/lib/keys/base-url";
 
 /**
  * /api/keys — save (POST) + list (GET) BYOK provider keys.
@@ -19,6 +20,11 @@ import { toKeyMetadata } from "@/lib/keys/metadata";
  *     copy — never the DB/error detail.
  *   - Writes go through the service-role client (bypasses RLS) attributed to the
  *     verified userId; reads go through the RLS-scoped anon server client.
+ *   - base_url is gated by `baseUrlSchema` (the shared public-http(s) predicate)
+ *     BEFORE it is persisted. This is the more consequential of the two key
+ *     routes: whatever is stored here is dialled with the DECRYPTED key on every
+ *     subsequent agent run, so an unvalidated value is a persistent SSRF and a
+ *     standing key-exfiltration channel (review CR-03).
  *
  * runtime='nodejs' — node:crypto (AES-256-GCM) needs the Node runtime.
  */
@@ -28,7 +34,7 @@ import { toKeyMetadata } from "@/lib/keys/metadata";
 // rather than a generic validation error.
 const bodySchema = z.object({
   provider: z.enum(["openai", "kimi", "custom", "anthropic", "openrouter"]),
-  base_url: z.url(),
+  base_url: baseUrlSchema,
   apiKey: z.string().min(1),
 });
 
@@ -69,7 +75,11 @@ export async function POST(req: Request): Promise<Response> {
 
     const parsed = bodySchema.safeParse(raw);
     if (!parsed.success) {
-      return json({ error: "Enter a provider, base URL, and key." }, 400);
+      const rejected = parsed.error.issues.some((i) => i.message === BASE_URL_REJECTED);
+      return json(
+        { error: rejected ? BASE_URL_REJECTED : "Enter a provider, base URL, and key." },
+        400,
+      );
     }
     const { provider, base_url, apiKey } = parsed.data;
 

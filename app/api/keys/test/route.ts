@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { probeErrorCopy, isTestableProvider } from "@/lib/keys/probe";
+import { baseUrlSchema, BASE_URL_REJECTED } from "@/lib/keys/base-url";
 import { MODEL_REGISTRY } from "@/lib/registry";
 
 /**
@@ -10,7 +11,11 @@ import { MODEL_REGISTRY } from "@/lib/registry";
  *
  * SECURITY CONTRACT (UX-01 / T-02key-02 / T-02key-05, mirrors render-pdf):
  *   - getClaims() identity gate so anonymous callers cannot burn probes.
- *   - base_url constrained to http(s) by zod url() (SSRF guard).
+ *   - base_url is gated by `baseUrlSchema` (lib/keys/base-url.ts), which runs the
+ *     SAME public-http(s) predicate as fetch_page. A bare zod `z.url()` does NOT
+ *     do this — it accepts file:, javascript:, and http://169.254.169.254/ — and
+ *     this route is the more dangerous of the two, since it dials the named host
+ *     immediately and its 401/403-vs-429 reply is a status oracle (review CR-03).
  *   - The provider response body is NEVER returned. On failure we read only the
  *     numeric status, map it through probeErrorCopy(), console.error the detail
  *     server-side ONLY, and return { ok:false, reason } — no sk-… fragment, no
@@ -22,7 +27,7 @@ import { MODEL_REGISTRY } from "@/lib/registry";
 
 const bodySchema = z.object({
   provider: z.enum(["openai", "kimi", "custom", "anthropic", "openrouter"]),
-  base_url: z.url(),
+  base_url: baseUrlSchema,
   apiKey: z.string().min(1),
   model: z.string().min(1).optional(),
 });
@@ -81,7 +86,13 @@ export async function POST(req: Request): Promise<Response> {
 
     const parsed = bodySchema.safeParse(raw);
     if (!parsed.success) {
-      return json({ ok: false, reason: "Enter a key and a valid base URL." }, 400);
+      // Say WHY when the base URL itself was refused, so a reviewer probing the
+      // SSRF gate sees the gate rather than a generic validation message.
+      const rejected = parsed.error.issues.some((i) => i.message === BASE_URL_REJECTED);
+      return json(
+        { ok: false, reason: rejected ? BASE_URL_REJECTED : "Enter a key and a valid base URL." },
+        400,
+      );
     }
     const { provider, base_url, apiKey, model } = parsed.data;
 

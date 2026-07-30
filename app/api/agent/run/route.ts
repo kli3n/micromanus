@@ -19,6 +19,7 @@ import { createOpenAiCompatModel } from "@/lib/agent/models/openai-compat";
 import { createAnthropicModel } from "@/lib/agent/models/anthropic";
 import { webSearch } from "@/lib/agent/tools/web-search";
 import { fetchPage } from "@/lib/agent/tools/fetch-page";
+import { isAllowedBaseUrl } from "@/lib/keys/base-url";
 
 // Re-export the DI chunk type the 02-04 seam test imports from this module.
 export type { ModelChunk } from "@/lib/agent/loop";
@@ -364,6 +365,17 @@ export async function POST(req: Request): Promise<Response> {
     return sseErrorResponse(
       "key_error",
       "Could not read your saved API key. Re-save it in Settings.",
+    );
+  }
+  // (iii) re-gate the STORED base_url. /api/keys validates on the way in, but
+  // rows written before that gate existed are untrusted (review CR-03) — and
+  // this is the line that hands a base URL the decrypted key. Runs BEFORE the
+  // debit, so a refused row costs the user nothing.
+  if (!isAllowedBaseUrl(keyRow.base_url)) {
+    console.error("[agent/run] refused a stored base_url that is not a public http(s) address");
+    return sseErrorResponse(
+      "key_error",
+      "The base URL saved with your key is not allowed. Re-save it in Settings.",
     );
   }
   const baseURL = keyRow.base_url || DEFAULT_BASE_URLS[provider];
