@@ -20,6 +20,7 @@ import { createAnthropicModel } from "@/lib/agent/models/anthropic";
 import { webSearch } from "@/lib/agent/tools/web-search";
 import { fetchPage } from "@/lib/agent/tools/fetch-page";
 import { isAllowedBaseUrl } from "@/lib/keys/base-url";
+import { filterForwardedCookies } from "@/lib/net/forward-cookie";
 
 // Re-export the DI chunk type the 02-04 seam test imports from this module.
 export type { ModelChunk } from "@/lib/agent/loop";
@@ -310,8 +311,15 @@ export async function POST(req: Request): Promise<Response> {
   // double duty: it satisfies Vercel deployment protection AND carries the
   // Supabase session the render route's auth check (D-40) needs. It is only ever
   // sent to an origin `originOf` vouched for — see CR-04 there.
+  //
+  // Residual #2 (T-03-12-02): and it is NARROWED to just those two families
+  // before it leaves — `_vercel_jwt` plus every `sb-`-prefixed cookie (the
+  // Supabase set is CHUNKED, hence a prefix). Third-party cookies no longer
+  // cross the trust boundary alongside the full report body. See
+  // lib/net/forward-cookie.ts for why this is superset-preserving by
+  // construction and therefore cannot break authenticated rendering.
   const renderOrigin = originOf(req);
-  const forwardCookie = req.headers.get("cookie") ?? "";
+  const forwardCookie = filterForwardedCookies(req.headers.get("cookie"));
 
   // (a) Identity — user-scoped client, IDENTITY ONLY (never the debit path).
   const supabase = await createClient();
