@@ -602,7 +602,9 @@ export async function POST(req: Request): Promise<Response> {
   const model: Model =
     spec.provider === "anthropic"
       ? createAnthropicModel({ apiKey, baseURL, modelId })
-      : createOpenAiCompatModel({ apiKey, baseURL, modelId });
+      : // `provider` only picks the completion-cap parameter NAME
+        // (max_completion_tokens on openai, max_tokens elsewhere — WR-03).
+        createOpenAiCompatModel({ apiKey, baseURL, modelId, provider: spec.provider });
 
   // (h) Stream. waitUntil keeps the loop alive past client disconnect (CHAT-08).
   const finalChatId = chatId;
