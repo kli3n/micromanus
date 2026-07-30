@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { costUsd, savingsUsd } from "@/lib/pricing";
 import { getModel } from "@/lib/registry";
+import { countConversationMessages } from "@/lib/stats/message-count";
 
 /**
  * /app/stats — Cost & usage (STAT-02, STAT-03, STAT-05, UX-02; D-16).
@@ -214,10 +215,12 @@ export default async function StatsPage() {
   const chatMeta = new Map<string, ChatRow>();
   for (const c of chats) chatMeta.set(c.id, c);
 
-  const messageCount = new Map<string, number>();
-  for (const m of messages) {
-    messageCount.set(m.chat_id, (messageCount.get(m.chat_id) ?? 0) + 1);
-  }
+  // WR-06: conversation TURNS only. `messages` also carries internal rows — one
+  // insert plus one status update per tool call, the run-meter carrier, the plan
+  // card and the artifact carrier are all role='tool' in the same table — so a
+  // per-row count reported ~21 messages for a 4-message chat. The helper's
+  // allow-list (user | assistant) keeps any future internal role out by default.
+  const messageCount = countConversationMessages(messages);
 
   interface ChatAgg {
     chatId: string;
