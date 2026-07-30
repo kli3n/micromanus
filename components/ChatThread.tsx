@@ -85,6 +85,14 @@ interface ChatThreadProps {
    * assistant row to render as the "Researching…" placeholder on a
    * refreshed/reopened tab. Realtime fills/settles it at terminal status. */
   initialPendingAssistantId?: string | null;
+  /**
+   * Server-seeded run-meter state, set by the page ONLY while the latest run is
+   * still executing (`runs.iterations` + `runs.started_at`). This is what makes
+   * a reopened tab's FIRST painted frame show the true iteration count instead
+   * of 0/12 — see the `realtimeRun` seed below for why the Realtime feed alone
+   * cannot supply it.
+   */
+  initialRunMeter?: { iterations: number; startedAt?: string } | null;
 }
 
 function WarnIcon() {
@@ -499,6 +507,7 @@ export function ChatThread({
   balance: initialBalance,
   isNew,
   initialPendingAssistantId = null,
+  initialRunMeter = null,
 }: ChatThreadProps) {
   const router = useRouter();
   const [activeChatId, setActiveChatId] = useState<string | null>(chatId);
@@ -518,10 +527,30 @@ export function ChatThread({
   const [liveIterations, setLiveIterations] = useState(0);
   // Meter feed from runs Realtime UPDATEs (iterations, started_at — written
   // per-pass by 03-04) for tabs that do NOT own a live SSE stream (D-25/D-56).
+  //
+  // SEEDED FROM THE SERVER (03-UAT test 7 root cause). This used to start at
+  // `null`, which meant a reopened tab had NO iteration count until the next
+  // Realtime `runs` UPDATE happened to arrive — the persisted kind:"meter"
+  // carrier row is written once at loop start and carries no count, so
+  // `Math.max(liveIterations, realtimeRun?.iterations ?? 0, meter.iterations ?? 0)`
+  // resolved to 0 and the meter rendered a FALSE "iteration 0/12".
+  //
+  // That next UPDATE is not prompt: the loop writes nothing to Postgres while a
+  // model call is streaming (terminal-once content persistence), so mid-run the
+  // gap is 3-17s — and in the FINAL synthesis turn there is no further
+  // `setRunIterations` at all, only the terminal `setRunStatus`. A reload landing
+  // there left 0/12 on screen with a static tool rail for the rest of the run,
+  // then everything appeared at once. Measured on the deployed app: at the reload
+  // frame the DB held iterations=2 while the DOM read "iteration 0/12", and the
+  // run's last 21 seconds produced ZERO Realtime events.
+  //
+  // Seeding is monotonic-safe: `onRunRow` folds with Math.max, so no event can
+  // move the count backwards, and `settleFromDb` clears this back to null so the
+  // settled carrier payload (server-computed iterations + elapsedMs) takes over.
   const [realtimeRun, setRealtimeRun] = useState<{
     iterations: number;
     startedAt?: string;
-  } | null>(null);
+  } | null>(initialRunMeter);
   // Saturation-fallback chooser: set on a `rate_limited` SSE event with a
   // non-empty fallback list; drives the inline SaturationNotice.
   const [saturation, setSaturation] = useState<{

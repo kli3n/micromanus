@@ -90,10 +90,25 @@ export default async function ChatPage({
   // Surface that row's id so a refreshed/reopened tab renders the same
   // "Researching…" placeholder as the initiating tab instead of a blank gap;
   // the Realtime terminal UPDATE then fills it in one shot.
+  //
+  // `iterations` + `started_at` are selected for the RUN METER (03-UAT test 7).
+  // The persisted kind:"meter" carrier row is written ONCE at loop start, with
+  // {state:"running", startedAt} and deliberately no count — the count lives on
+  // `runs.iterations`, rewritten per pass. Without seeding it here a reopened
+  // tab начина at 0 and can only be corrected by the NEXT Realtime `runs`
+  // tab starts at 0 and can only be corrected by the NEXT Realtime `runs`
+  // UPDATE; because the loop writes nothing to Postgres while a model call is
+  // streaming, that is 3-17s away mid-run and NEVER arrives if the reload lands
+  // in the final synthesis turn (the only remaining `runs` write there is the
+  // terminal setRunStatus). The meter then read a false "iteration 0/12" for the
+  // whole rest of the run — measured: DB iterations=2 vs DOM 0/12 at the reload
+  // frame, plus a 21s all-silent tail window. Seeding makes the FIRST painted
+  // frame authoritative.
   let pendingAssistantId: string | null = null;
+  let initialRunMeter: { iterations: number; startedAt?: string } | null = null;
   const { data: latestRun } = await supabase
     .from("runs")
-    .select("status")
+    .select("status, started_at, iterations")
     .eq("chat_id", chatId)
     .order("started_at", { ascending: false })
     .limit(1)
@@ -103,6 +118,13 @@ export default async function ChatPage({
       .reverse()
       .find((m) => m.role === "assistant" && m.content.length === 0);
     pendingAssistantId = lastEmptyAssistant?.id ?? null;
+    // Seeded ONLY for a running run: a terminal run's count comes from the
+    // settled meter carrier payload, which already carries server-computed
+    // iterations + elapsedMs.
+    initialRunMeter = {
+      iterations: (latestRun.iterations as number | null) ?? 0,
+      startedAt: (latestRun.started_at as string | null) ?? undefined,
+    };
   }
 
   return (
@@ -113,6 +135,7 @@ export default async function ChatPage({
       balance={balance}
       isNew={false}
       initialPendingAssistantId={pendingAssistantId}
+      initialRunMeter={initialRunMeter}
     />
   );
 }
