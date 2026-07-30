@@ -94,6 +94,45 @@ describe("isSafeUrl — SSRF guard (AGENT-04 / T-02-05-01)", () => {
     expect(isSafeUrl("http://017700000001/")).toBe(false);
   });
 
+  // CR-02 residual, closed in a follow-up: the first round fixed only the IPv6
+  // spellings, leaving genuinely routable-internal and reserved v4 space open.
+  it("CR-02: rejects CGNAT, benchmark, multicast and reserved IPv4", () => {
+    expect(isSafeUrl("http://100.64.1.1/")).toBe(false); // CGNAT, RFC 6598
+    expect(isSafeUrl("http://100.127.255.255/")).toBe(false); // top of /10
+    expect(isSafeUrl("http://198.18.0.1/")).toBe(false); // benchmark, RFC 2544
+    expect(isSafeUrl("http://198.19.255.255/")).toBe(false); // top of /15
+    expect(isSafeUrl("http://224.0.0.1/")).toBe(false); // multicast
+    expect(isSafeUrl("http://239.255.255.250/")).toBe(false); // SSDP multicast
+    expect(isSafeUrl("http://240.0.0.1/")).toBe(false); // reserved
+    expect(isSafeUrl("http://255.255.255.255/")).toBe(false); // broadcast
+  });
+
+  it("CR-02: the v4-mapped delegation closes the IPv6 spellings of those ranges too", () => {
+    // One predicate, so tightening isPrivateIPv4 tightens ::ffff:… for free.
+    expect(isSafeUrl("http://[::ffff:100.64.1.1]/")).toBe(false);
+    expect(isSafeUrl("http://[::ffff:198.18.0.1]/")).toBe(false);
+    expect(isSafeUrl("http://[::ffff:224.0.0.1]/")).toBe(false);
+    expect(isSafeUrl("http://[::ffff:240.0.0.1]/")).toBe(false);
+    expect(isSafeUrl("http://[::ffff:255.255.255.255]/")).toBe(false);
+    expect(isSafeUrl("http://[::100.64.1.1]/")).toBe(false); // v4-compatible ::/96
+  });
+
+  it("CR-02: does NOT over-block — public and documentation IPv4 stay allowed", () => {
+    // Public resolvers.
+    expect(isSafeUrl("http://8.8.8.8/")).toBe(true);
+    expect(isSafeUrl("http://1.1.1.1/")).toBe(true);
+    // Documentation ranges are not SSRF targets — deliberately left routable.
+    expect(isSafeUrl("http://192.0.2.1/")).toBe(true); // 192.0.2.0/24
+    expect(isSafeUrl("http://198.51.100.1/")).toBe(true); // 198.51.100.0/24
+    expect(isSafeUrl("http://203.0.113.1/")).toBe(true); // 203.0.113.0/24
+    // Just outside each newly-blocked range — the masks must be exact.
+    expect(isSafeUrl("http://100.63.255.255/")).toBe(true); // below 100.64/10
+    expect(isSafeUrl("http://100.128.0.1/")).toBe(true); // above 100.64/10
+    expect(isSafeUrl("http://198.17.255.255/")).toBe(true); // below 198.18/15
+    expect(isSafeUrl("http://198.20.0.1/")).toBe(true); // above 198.18/15
+    expect(isSafeUrl("http://223.255.255.255/")).toBe(true); // below multicast
+  });
+
   it("CR-02: ipv6Hextets expands and validates, and returns null on garbage", () => {
     expect(ipv6Hextets("::1")).toEqual([0, 0, 0, 0, 0, 0, 0, 1]);
     expect(ipv6Hextets("::")).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);

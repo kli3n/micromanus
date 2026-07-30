@@ -14,7 +14,8 @@
  * WHAT IT REJECTS
  *   - any scheme other than http: / https:
  *   - `localhost` and `*.localhost`
- *   - private / loopback / link-local IPv4, incl. the cloud metadata IP
+ *   - private / loopback / link-local / CGNAT / reserved IPv4, incl. the cloud
+ *     metadata IP — but NOT the documentation ranges, which are not SSRF targets
  *   - the IPv6 equivalents, range-checked NUMERICALLY (see isPrivateIPv6)
  *
  * ACCEPTED RESIDUAL RISK: DNS rebinding — a public hostname that resolves to a
@@ -22,7 +23,14 @@
  * a name-based gate, not a connect-time one.
  */
 
-/** Private / loopback / link-local IPv4, given a dotted-quad literal. */
+/**
+ * Private / loopback / link-local / reserved IPv4, given a dotted-quad literal.
+ *
+ * The ranges below are limited to space that is either genuinely
+ * routable-internal or not globally routable at all. The documentation ranges
+ * (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) are deliberately NOT here —
+ * they are not SSRF targets, and blocking them would be over-blocking.
+ */
 export function isPrivateIPv4(host: string): boolean {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
   if (!m) return false;
@@ -35,6 +43,12 @@ export function isPrivateIPv4(host: string): boolean {
   if (a === 169 && b === 254) return true; // link-local incl. 169.254.169.254
   if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
   if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  // Carrier-grade NAT (RFC 6598) — real cloud/carrier internal space, and the
+  // gap that kept http://100.64.1.1/ dialable after the first round of fixes.
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10
+  if (a === 198 && (b === 18 || b === 19)) return true; // benchmark 198.18.0.0/15
+  if (a >= 224 && a <= 239) return true; // multicast 224.0.0.0/4
+  if (a >= 240) return true; // reserved 240.0.0.0/4, incl. 255.255.255.255
   return false;
 }
 

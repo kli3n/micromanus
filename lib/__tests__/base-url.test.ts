@@ -64,6 +64,14 @@ describe("CR-03: baseUrlSchema rejects private / loopback / metadata hosts", () 
     // IPv4 shorthands the URL parser folds to loopback
     "http://2130706433/v1",
     "http://127.1/v1",
+    // CGNAT / benchmark / multicast / reserved — closed in the CR-02 follow-up,
+    // and inherited here for free because the gate is genuinely shared.
+    "http://100.64.1.1/v1",
+    "http://198.18.0.1/v1",
+    "http://224.0.0.1/v1",
+    "http://240.0.0.1/v1",
+    "http://255.255.255.255/v1",
+    "http://[::ffff:100.64.1.1]/v1",
   ])("rejects %s", (u) => {
     expect(baseUrlSchema.safeParse(u).success).toBe(false);
   });
