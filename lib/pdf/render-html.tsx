@@ -23,6 +23,11 @@
  */
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+// WR-08: the render-boundary scheme allow-list now lives in ONE zero-import
+// module, imported here and by the chat's Sources list, so the PDF bibliography
+// and the chat can never disagree about what may become a clickable href. It is
+// deliberately NOT lib/net/safe-url.ts (the SSRF gate) — see that module's header.
+import { isSafeHref } from "@/lib/net/safe-href";
 
 // react-dom's server entries are all gated behind the `react-server` export
 // condition (react-dom@19 maps every ./server* subpath to an EMPTY
@@ -102,11 +107,6 @@ export function citationMarkers(markdown: string): number[] {
     seen.add(Number.parseInt(m[1], 10));
   }
   return [...seen].sort((a, b) => a - b);
-}
-
-/** http:/https: only — anything else gets no href (defence against javascript: URLs). */
-function isSafeHref(url: string): boolean {
-  return /^https?:\/\//i.test(url.trim());
 }
 
 /**
