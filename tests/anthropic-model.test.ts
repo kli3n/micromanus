@@ -243,6 +243,73 @@ describe("createAnthropicModel — request shape (D-48/D-49)", () => {
   });
 });
 
+describe("createAnthropicModel — the system parameter is omitted, never empty (WR-05)", () => {
+  /**
+   * An empty text block is BOTH a 400 and un-cacheable (E1b / D-59). The file
+   * already filters empty blocks out of `messages`; these tests extend the same
+   * invariant to the block the wrapper builds itself for cache breakpoint 1.
+   * Asserted by KEY PRESENCE — `system: undefined` would still serialize the key
+   * and is not the contract.
+   */
+  const asRecord = (req: CapturedRequest): Record<string, unknown> =>
+    req as unknown as Record<string, unknown>;
+
+  it("keeps the one-element cache_control'd system array byte-identical to DEEP_RESEARCH_SYSTEM for the standard array", async () => {
+    const { model, captured } = makeModel();
+    await collect(model, STANDARD);
+    const req = captured.request!;
+    expect(Array.isArray(req.system)).toBe(true);
+    expect(req.system).toHaveLength(1);
+    expect(req.system[0].text).toBe(DEEP_RESEARCH_SYSTEM);
+    expect(req.system[0].cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("omits the system KEY entirely when the message array contains no system entry", async () => {
+    const { model, captured } = makeModel();
+    await collect(model, [
+      { role: "user", content: "First question" },
+      { role: "assistant", content: "First answer" },
+      { role: "user", content: "Second question" },
+    ]);
+    expect("system" in asRecord(captured.request!)).toBe(false);
+  });
+
+  it("omits the system KEY when the system entry's content is whitespace-only", async () => {
+    const { model, captured } = makeModel();
+    await collect(model, [
+      { role: "system", content: "   \n\t  " },
+      { role: "user", content: "First question" },
+    ]);
+    expect("system" in asRecord(captured.request!)).toBe(false);
+  });
+
+  it("the no-system request is otherwise fully valid, and breakpoint 2 still lands on the last block of the last message", async () => {
+    const { model, captured } = makeModel();
+    await collect(model, [
+      { role: "user", content: "First question" },
+      { role: "assistant", content: "First answer" },
+      { role: "user", content: "Third question" },
+    ]);
+    const req = captured.request!;
+    expect(req.model).toBe("claude-sonnet-4-6");
+    expect(req.max_tokens).toBe(MAX_TOKENS);
+    expect(req.tools).toHaveLength(TOOL_DEFINITIONS.length);
+    for (const m of req.messages) {
+      expect(m.role).not.toBe("system");
+      expect(Array.isArray(m.content)).toBe(true);
+    }
+    // Breakpoint 1 is absent BY DESIGN here (nothing worth caching); breakpoint
+    // 2 is unaffected and still the single flagged block.
+    const last = req.messages[req.messages.length - 1];
+    expect(last.content[last.content.length - 1].text).toBe("Third question");
+    expect(last.content[last.content.length - 1].cache_control).toEqual({
+      type: "ephemeral",
+    });
+    const flagged = req.messages.flatMap((m) => m.content).filter((b) => b.cache_control);
+    expect(flagged).toHaveLength(1);
+  });
+});
+
 describe("createAnthropicModel — stream consumption (Correction C4)", () => {
   it("yields text_delta events as {delta} chunks in order", async () => {
     const { model } = makeModel({}, ["Hello ", "world"]);
