@@ -51,7 +51,24 @@ function scriptedModel(turns: Turn[]) {
   };
 }
 
-function fakeDb() {
+/** DB methods a test may make reject (WR-04 injected-failure cases). */
+type FailableDbMethod =
+  | "updateMessageContent"
+  | "markFirstModelCall"
+  | "setRunStatus"
+  | "setRunIterations"
+  | "insertUsageEvent"
+  | "refundRun"
+  | "insertToolMessage"
+  | "updateToolMessage";
+
+/**
+ * Fake DB. `rejectOn` (WR-04) maps a method name to the raw error message it
+ * must throw — the call is still RECORDED first, so "called exactly once" holds
+ * for a method that records then fails. Existing callers pass nothing and get
+ * the always-succeeding shape unchanged.
+ */
+function fakeDb(rejectOn: Partial<Record<FailableDbMethod, string>> = {}) {
   const calls = {
     updateMessageContent: [] as { id: string; content: string }[],
     markFirstModelCall: [] as string[],
@@ -63,32 +80,49 @@ function fakeDb() {
     updateToolMessage: [] as { id: string; content: string }[],
   };
   let toolSeq = 0;
+  // eslint-disable-next-line @typescript-eslint/require-await
+  const maybeThrow = async (m: FailableDbMethod): Promise<void> => {
+    const raw = rejectOn[m];
+    if (raw !== undefined) {
+      const err = new Error(raw);
+      err.name = `Injected_${m}`;
+      throw err;
+    }
+  };
   return {
     calls,
     async updateMessageContent(id: string, content: string) {
       calls.updateMessageContent.push({ id, content });
+      await maybeThrow("updateMessageContent");
     },
     async markFirstModelCall(runId: string) {
       calls.markFirstModelCall.push(runId);
+      await maybeThrow("markFirstModelCall");
     },
     async setRunStatus(runId: string, status: string, iterations?: number) {
       calls.setRunStatus.push({ runId, status, iterations });
+      await maybeThrow("setRunStatus");
     },
     async setRunIterations(runId: string, iterations: number) {
       calls.setRunIterations.push({ runId, iterations });
+      await maybeThrow("setRunIterations");
     },
     async insertUsageEvent(row: unknown) {
       calls.insertUsageEvent.push(row);
+      await maybeThrow("insertUsageEvent");
     },
     async refundRun(runId: string) {
       calls.refundRun.push(runId);
+      await maybeThrow("refundRun");
     },
     async insertToolMessage(row: { content: string }) {
       calls.insertToolMessage.push({ content: row.content });
+      await maybeThrow("insertToolMessage");
       return `tool-${++toolSeq}`;
     },
     async updateToolMessage(id: string, content: string) {
       calls.updateToolMessage.push({ id, content });
+      await maybeThrow("updateToolMessage");
     },
   };
 }
@@ -932,4 +966,127 @@ describe("mapProviderError secret hygiene (EV-18 delta row)", () => {
       expect((errFrame!.data as { message: string }).message.length).toBeGreaterThan(0);
     },
   );
+});
+
+describe("WR-04: the terminal write always lands and the loop never rejects out of its catch", () => {
+  // A transient DB failure is MOST likely exactly on a failure path, and every
+  // client stops waiting only on a non-'running' runs.status: if an earlier
+  // terminal step throws, the run wedges at 'running' forever — on this tab AND
+  // on every future reopen (T-03-12-03). So each terminal step is guarded and the
+  // status write is unconditional and LAST.
+  const RAW_PG_BODY =
+    'POSTGRES_RAW_BODY: duplicate key value violates unique constraint "credit_ledger_ref" detail=(user_id)=(u1)';
+  const MAPPED_COPY = "The research run failed to complete. Please try again.";
+
+  it("writes the terminal failed run status exactly once when refundRun rejects", async () => {
+    const s = collectSend();
+    const db = fakeDb({ refundRun: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]); // pre-first-call → refund path
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    expect(db.calls.refundRun).toEqual(["r1"]); // the refund CONDITION is untouched
+    expect(db.calls.setRunStatus).toHaveLength(1);
+    expect(db.calls.setRunStatus[0]).toMatchObject({
+      runId: "r1",
+      status: "failed",
+    });
+    // The terminal content write is reached too — the placeholder gets real copy.
+    expect(db.calls.updateMessageContent.at(-1)).toMatchObject({
+      id: "a1",
+      content: MAPPED_COPY,
+    });
+    errSpy.mockRestore();
+  });
+
+  it("writes the terminal failed run status exactly once when updateMessageContent rejects", async () => {
+    const s = collectSend();
+    const db = fakeDb({ updateMessageContent: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // First call completes (firstMarked) then the second throws → no refund.
+    const model = scriptedModel([
+      { toolCalls: [web_search("tc1", "q")], usage: USAGE },
+      { throwAt: "before" },
+    ]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    expect(db.calls.refundRun).toHaveLength(0); // refund condition unchanged
+    expect(db.calls.updateMessageContent).toHaveLength(1);
+    expect(db.calls.setRunStatus).toHaveLength(1);
+    expect(db.calls.setRunStatus[0]).toMatchObject({ status: "failed" });
+    errSpy.mockRestore();
+  });
+
+  it("resolves rather than rejecting when setRunStatus itself rejects", async () => {
+    const s = collectSend();
+    const db = fakeDb({ setRunStatus: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await expect(
+      runAgentLoop(baseParams(s.send, db, model, fakeTools())),
+    ).resolves.toBeUndefined();
+
+    expect(db.calls.setRunStatus).toHaveLength(1);
+    errSpy.mockRestore();
+  });
+
+  it("resolves in every injected-failure case, so the promise handed to waitUntil always settles", async () => {
+    for (const method of [
+      "refundRun",
+      "updateMessageContent",
+      "setRunStatus",
+    ] as const) {
+      const s = collectSend();
+      const db = fakeDb({ [method]: RAW_PG_BODY });
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const model = scriptedModel([{ throwAt: "before" }]);
+
+      await expect(
+        runAgentLoop(baseParams(s.send, db, model, fakeTools())),
+        `runAgentLoop must resolve when ${method} rejects`,
+      ).resolves.toBeUndefined();
+
+      errSpy.mockRestore();
+    }
+  });
+
+  it("still emits the error and done(failed) SSE events when a guarded terminal step failed", async () => {
+    const s = collectSend();
+    const db = fakeDb({ refundRun: RAW_PG_BODY, updateMessageContent: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    const done = s.events.find((e) => e.event === "done");
+    expect(done, "done event still emitted").toBeDefined();
+    expect(done!.data).toMatchObject({ runId: "r1", status: "failed" });
+    expect(s.events.some((e) => e.event === "error")).toBe(true);
+    // ...and the status write still landed despite BOTH earlier steps failing.
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
+    errSpy.mockRestore();
+  });
+
+  it("logs the guarded failure by NAME only — no Postgres body reaches a log call (T-03-12-04)", async () => {
+    const s = collectSend();
+    const db = fakeDb({ refundRun: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    const logged = errSpy.mock.calls.map((c) =>
+      c.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "),
+    );
+    const all = logged.join("\n");
+    expect(all).not.toContain("POSTGRES_RAW_BODY");
+    expect(all).not.toContain("credit_ledger_ref");
+    // The error NAME is what identifies it, and the label names the step.
+    expect(all).toContain("Injected_refundRun");
+    expect(all).toContain("refund");
+    errSpy.mockRestore();
+  });
 });

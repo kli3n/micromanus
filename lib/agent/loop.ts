@@ -593,16 +593,52 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
     // Server-side only — never leak the raw provider/RPC detail (Pitfall 7).
     console.error(`[agent/run] run=${runId} iter=${iterations} run failed:`, err);
     const mapped = mapProviderError(err);
+    /**
+     * WR-04 terminal-step guard. A transient DB failure is MOST likely on a
+     * failure path, and these four awaits used to be unguarded: a throw from
+     * `refundRun`'s RPC or the content write rejected `runAgentLoop` BEFORE
+     * `setRunStatus` ran, so `runs.status` stayed `'running'` forever. Every
+     * client stops waiting only on a NON-`running` status, so the backstop poll
+     * spun the "Researching…" placeholder on that tab and on every future
+     * reopen (T-03-12-03) — and the rejection reached `waitUntil` unhandled.
+     *
+     * Each terminal step now runs behind this wrapper and the run-status write
+     * is UNCONDITIONAL and LAST, so it lands even when every earlier step
+     * failed. Hygiene (T-03-12-04): the label plus `err.name` only — never a
+     * raw Postgres or provider body (the `:445` / `:388` convention above).
+     */
+    const terminalStep = async (
+      label: string,
+      run: () => Promise<void>,
+    ): Promise<void> => {
+      try {
+        await run();
+      } catch (stepErr) {
+        console.error(
+          `[agent/run] run=${runId} iter=${iterations} terminal step "${label}" failed:`,
+          stepErr instanceof Error ? stepErr.name : "error",
+        );
+      }
+    };
     // Refund ONLY when the very first model call never completed (disconnect is
     // not this path — the guarded send no-ops and never throws — Pitfall 3).
-    if (!firstMarked) await db.refundRun(runId);
+    // The CONDITION is unchanged; only its failure mode is now contained.
+    await terminalStep("refund", async () => {
+      if (!firstMarked) await db.refundRun(runId);
+    });
     // The meter settles on the failure path too — a failed run must not leave
     // a forever-ticking counter on any tab (D-56).
-    await settleMeter();
+    await terminalStep("meter settle", () => settleMeter());
     // Terminal-once write: a failed run persists the clean error copy, never
     // the in-flight partial text (broken tokens must not outlive the run).
-    await db.updateMessageContent(assistantMsgId, mapped.message);
-    await db.setRunStatus(runId, "failed", iterations);
+    await terminalStep("terminal content write", () =>
+      db.updateMessageContent(assistantMsgId, mapped.message),
+    );
+    // LAST and UNCONDITIONAL — the only signal every client uses to stop
+    // waiting. Nothing above may prevent it from being attempted.
+    await terminalStep("run status", () =>
+      db.setRunStatus(runId, "failed", iterations),
+    );
     // Saturation fallback: on a provider 429, surface the next free OpenRouter
     // model(s) so the client can re-run the same question elsewhere. The payload
     // carries ONLY model-id strings (never `err`, its message, or the raw provider

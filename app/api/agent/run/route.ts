@@ -722,7 +722,21 @@ export async function POST(req: Request): Promise<Response> {
         });
       // Outlive the client connection — the loop must keep persisting even if
       // the tab closed (CHAT-08 / D-25).
-      waitUntil(task);
+      //
+      // WR-04: the chain is TERMINATED here. `runTurn`, the `.finally` close and
+      // the deferred-render `.then` are each individually defensive, but nothing
+      // downstream of them was — a rejection anywhere in the chain became an
+      // unhandled rejection on the function. This catch makes it one tagged log
+      // line (error NAME only — never a provider or Postgres body) and
+      // guarantees the promise handed to waitUntil always settles.
+      waitUntil(
+        task.catch((err: unknown) => {
+          console.error(
+            `[agent/run] run=${runIdStr} waitUntil task rejected:`,
+            err instanceof Error ? err.name : "error",
+          );
+        }),
+      );
     },
   });
 
