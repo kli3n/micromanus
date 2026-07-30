@@ -191,19 +191,75 @@ export function filterProviderHistory(
 
 // ============================ Self-fetch origin (Correction C3) ============================
 /**
- * Resolve the origin for the deferred render self-fetch from the INCOMING
- * request — NEVER from VERCEL_URL (documented incompatible with Standard
- * Deployment Protection) or VERCEL_PROJECT_PRODUCTION_URL (would point a
- * preview's render at production). `x-forwarded-host` is what Vercel's edge
- * sets to the host the client actually requested; `host` and `req.url` are
- * the local-dev fallbacks (RESEARCH Pattern 3).
+ * Resolve the origin for the deferred render self-fetch.
+ *
+ * TWO constraints pull against each other here.
+ *
+ * (1) Correction C3: the origin MUST come from the INCOMING request — never
+ *     VERCEL_URL (documented incompatible with Standard Deployment Protection)
+ *     and never VERCEL_PROJECT_PRODUCTION_URL (would point a preview's render at
+ *     production). `x-forwarded-host` is what Vercel's edge sets to the host the
+ *     client actually requested (RESEARCH Pattern 3).
+ *
+ * (2) Review CR-04: the POST to that origin carries the caller's Cookie header,
+ *     including the live Supabase session token. Deriving the destination of a
+ *     credential from an unvalidated, client-settable header is the classic
+ *     host-header-injection shape.
+ *
+ * Both are satisfied by keeping the request as the SOURCE of the host but
+ * requiring the result to be VOUCHED FOR before a credential can ride on it.
+ * The env vars below are used only as allowlist entries, never as the origin, so
+ * C3 still holds: a preview never resolves to production, and Deployment
+ * Protection still sees the host the client used.
+ *
+ * Anything unrecognised falls back to `new URL(req.url).origin` — the origin the
+ * function itself was invoked on, which is not attacker-chosen.
  */
+function isLocalHostname(hostPort: string): boolean {
+  return /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(hostPort);
+}
+
 export function originOf(req: Request): string {
   const h = req.headers;
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  if (host) return `${proto}://${host}`;
-  return new URL(req.url).origin; // last resort (vercel dev without x-forwarded-*)
+  const self = new URL(req.url);
+  const fallback = self.origin;
+
+  const candidate = (h.get("x-forwarded-host") ?? h.get("host") ?? "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  if (!candidate) return fallback; // vercel dev without x-forwarded-*
+
+  const local = isLocalHostname(candidate);
+  const allowed =
+    // The host this function was actually invoked on (covers `vercel dev`,
+    // `next dev`, and any case where host == the real deployment host).
+    candidate === self.host.toLowerCase() ||
+    local ||
+    // Vercel deployment + branch/preview hosts.
+    /^[a-z0-9-]+(\.[a-z0-9-]+)*\.vercel\.app(:\d+)?$/.test(candidate) ||
+    // Explicitly configured hosts, when present.
+    [
+      process.env.NEXT_PUBLIC_SITE_HOST,
+      process.env.VERCEL_BRANCH_URL,
+      process.env.VERCEL_URL,
+      process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    ]
+      .filter((v): v is string => typeof v === "string" && v.length > 0)
+      .map((v) => v.trim().toLowerCase())
+      .includes(candidate);
+
+  if (!allowed) {
+    // Not fatal: the render still happens, just against our own origin.
+    console.error("[agent/run] refused an un-vouched forwarded host for the render self-fetch");
+    return fallback;
+  }
+
+  // Never downgrade a session cookie onto plaintext http off-box. Local dev is
+  // the only place http is allowed.
+  const proto = (h.get("x-forwarded-proto") ?? "").split(",")[0].trim().toLowerCase();
+  if (local) return `${proto === "https" ? "https" : "http"}://${candidate}`;
+  return `https://${candidate}`;
 }
 
 // ============================ Request body ============================
@@ -252,7 +308,8 @@ export async function POST(req: Request): Promise<Response> {
   // time, before the stream starts — waitUntil runs after the response closes
   // and re-reading a consumed request is unsafe. The forwarded cookie does
   // double duty: it satisfies Vercel deployment protection AND carries the
-  // Supabase session the render route's auth check (D-40) needs.
+  // Supabase session the render route's auth check (D-40) needs. It is only ever
+  // sent to an origin `originOf` vouched for — see CR-04 there.
   const renderOrigin = originOf(req);
   const forwardCookie = req.headers.get("cookie") ?? "";
 
