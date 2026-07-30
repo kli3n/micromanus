@@ -82,6 +82,28 @@ describe("PRE_NUMBERING_VINTAGE_SKIP_REASON", () => {
   });
 });
 
+describe("scripts/eval-run.ts consumes the SHARED predicate (no duplicated copy)", () => {
+  it("imports isPreNumberingVintage from lib/eval/vintage.ts by relative .ts path and never redeclares it inline", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(
+      new URL("../scripts/eval-run.ts", import.meta.url),
+      "utf8",
+    );
+    // The shared-module route was taken (the relative .ts specifier resolves
+    // under node type-stripping). If a future edit ever falls back to the
+    // documented-duplication route used for lib/pricing.ts, this assertion is
+    // the place to add the parity test the IN-05 remedy calls for.
+    expect(src).toMatch(
+      /import\s*\{[^}]*isPreNumberingVintage[^}]*\}\s*from\s*"\.\.\/lib\/eval\/vintage\.ts"/s,
+    );
+    expect(src).toMatch(/PRE_NUMBERING_VINTAGE_SKIP_REASON/);
+    // No inline redeclaration — one implementation, one tested source of truth.
+    expect(src).not.toMatch(/function\s+isPreNumberingVintage/);
+    // The gate must never key on the condition EV-01 audits.
+    expect(src).toMatch(/isPreNumberingVintage\(\{/);
+  });
+});
+
 describe("lib/eval/vintage.ts loadability contract (node type-stripping)", () => {
   it("has zero import statements and no non-erasable TypeScript syntax", async () => {
     const { readFileSync } = await import("node:fs");
