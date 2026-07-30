@@ -104,13 +104,32 @@ export function createAnthropicModel(opts: {
       //     Because the render order is tools -> system -> messages, this ONE
       //     breakpoint caches the tool definitions AND the system prompt
       //     together.
-      const system: Anthropic.TextBlockParam[] = [
-        {
-          type: "text",
-          text: messages.find((m) => m.role === "system")?.content ?? "",
-          cache_control: { type: "ephemeral" }, // default 5m TTL — do NOT use "1h"
-        },
-      ];
+      //
+      //     WR-05: the empty-text-block invariant runs in BOTH directions. An
+      //     empty text block is a 400 and is documented un-cacheable (E1b /
+      //     D-59), so such blocks are filtered out of `messages` at (2) AND are
+      //     never CONSTRUCTED here. When there is no system text the `system`
+      //     parameter is omitted from the request entirely (see the conditional
+      //     spread at (4)) — never sent as a block with empty text, and never as
+      //     a present-but-undefined key. Consequence: cache breakpoint 1 is
+      //     absent in that case, by design, because there is nothing there worth
+      //     caching. Breakpoint 2 is unaffected.
+      //
+      //     The .trim() is INERT on the live path and must stay inert:
+      //     DEEP_RESEARCH_SYSTEM has no leading or trailing whitespace and
+      //     tests/prompt.test.ts pins its sha256, so the cached bytes for the
+      //     real prompt are unchanged (D-49 byte stability).
+      const systemText = messages.find((m) => m.role === "system")?.content?.trim() ?? "";
+      const system: Anthropic.TextBlockParam[] | undefined =
+        systemText.length > 0
+          ? [
+              {
+                type: "text",
+                text: systemText,
+                cache_control: { type: "ephemeral" }, // default 5m TTL — do NOT use "1h"
+              },
+            ]
+          : undefined;
 
       // (2) Drop the system entry AND any empty/whitespace-only message.
       //     Empty text blocks are a 400 (E1b / D-59) and are documented as
@@ -149,7 +168,9 @@ export function createAnthropicModel(opts: {
       const stream = client.messages.stream({
         model: opts.modelId,
         max_tokens: MAX_TOKENS,
-        system,
+        // Conditional spread, NOT `system` — the key must be ABSENT, not present
+        // with an undefined value, when there is no system text (WR-05).
+        ...(system ? { system } : {}),
         messages: apiMessages,
         ...(anthropicTools ? { tools: anthropicTools } : {}),
       });
