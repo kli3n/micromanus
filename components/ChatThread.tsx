@@ -400,11 +400,6 @@ function SaturationNotice({
   selectedRef.current = selected;
   const firedRef = useRef(false);
 
-  const reduceMotion =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
   const fire = useCallback(
     (id: string) => {
       if (firedRef.current) return;
@@ -447,13 +442,19 @@ function SaturationNotice({
         </span>
       </div>
 
-      {/* Compositor-only progress: scaleX transform, never width (no CLS/jank). */}
+      {/* Compositor-only progress: scaleX transform, never width (no CLS/jank).
+          WR-09: the motion decision is CSS (`motion-reduce:transition-none`), not
+          a render-body media-query read — an inline `transition` would outrank
+          the variant, and reading the media query during render both broke
+          hydration and went stale until reload (the single sanctioned JS read
+          now lives in components/hooks/useReducedMotion.ts, which this element
+          does not need). Only the DRIVEN transform value and the
+          will-change hint (this element only) stay inline. */}
       <div className="h-[3px] w-full overflow-hidden rounded-full bg-[var(--warning-border)]">
         <div
-          className="h-full origin-left rounded-full bg-[var(--warning)]"
+          className="h-full origin-left rounded-full bg-[var(--warning)] transition-transform duration-[1s] ease-linear motion-reduce:transition-none"
           style={{
             transform: `scaleX(${Math.max(0, secondsLeft) / 10})`,
-            transition: reduceMotion ? "none" : "transform 1s linear",
             willChange: "transform",
           }}
         />
