@@ -14,6 +14,7 @@ import remarkGfm from "remark-gfm";
 import { remarkCitations } from "@/lib/markdown/remark-citations";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeChatChannel, type ChatMessageRow } from "@/lib/chat/realtime";
+import { canStartRun, isRunInFlight, sendDisabled } from "@/lib/chat/run-guard";
 import { getModel } from "@/lib/registry";
 import { BalanceBadge } from "@/components/BalanceBadge";
 import {
@@ -550,6 +551,23 @@ export function ChatThread({
 
   const canSend = balance > 0 && !!modelId;
 
+  // WR-02: the SERVER is authoritative on the credit balance. `initialBalance` is
+  // the server-rendered value, and `settleFromDb`'s `router.refresh()` fires on
+  // EVERY terminal path (the SSE `done` event, the Realtime terminal-status
+  // branch, and the 4s backstop poll) — so re-syncing whenever the prop changes
+  // is what actually carries the new number to the badge.
+  //
+  // The optimistic `status === "succeeded" ? balance - 1` arithmetic that used to
+  // live in the terminal `done` handler is GONE ON PURPOSE: a `budget_exhausted`
+  // run AND a `failed` run that got past its first model call BOTH consume a
+  // credit, and only the server knows which (decided by the `firstMarked` gate in
+  // lib/agent/loop.ts). Any client-side arithmetic is therefore a guess, and a
+  // wrong number sitting beside real dollar figures — or a `canSend` that stays
+  // true at a real balance of 0 — is worse than a number that lands a beat late.
+  useEffect(() => {
+    setBalance(initialBalance);
+  }, [initialBalance]);
+
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, []);
@@ -807,7 +825,9 @@ export function ChatThread({
       }
       case "done":
         sawTerminalRef.current = true;
-        if (data.status === "succeeded") setBalance((b) => Math.max(0, b - 1));
+        // No balance arithmetic here (WR-02) — settleFromDb's router.refresh()
+        // re-renders the RSC parent and the sync effect above adopts the
+        // server's number. See that comment for why the client cannot compute it.
         // Push the finished thread in one shot + refresh the RSC sidebar
         // (bump-to-top). settleFromDb is idempotent with the Realtime terminal
         // backstop.
@@ -941,7 +961,20 @@ export function ChatThread({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || !canSend || streamingRef.current) return;
+    // WR-01 (money correctness): one question, at most one `start_run` debit.
+    // Sample the REFS here, at CALL time — mutating a ref does not re-render, so
+    // a render-time snapshot would be stale exactly when it matters (a double-tap
+    // right after streamRun sets the flags). `pendingAssistantId` comes from the
+    // closure and is the only signal that survives a reload, which is what makes
+    // a REOPENED tab refuse too. This is the authoritative gate: the textarea's
+    // Enter handler calls submit() directly and never reads the button's
+    // `disabled` state, so a button-only guard would close nothing.
+    const runInFlight = isRunInFlight({
+      streaming: streamingRef.current,
+      pending: pendingRef.current,
+      pendingAssistantId,
+    });
+    if (!canStartRun({ text, sendingAllowed: canSend, runInFlight })) return;
 
     const userMsgId = `local-u-${Date.now()}`;
     const assistantId = `local-a-${Date.now()}`;
@@ -1276,7 +1309,22 @@ export function ChatThread({
             />
             <button
               type="submit"
-              disabled={!input.trim() || !!streamingId}
+              // Same shared predicate as submit(), sampled from the STATE-backed
+              // signals because a render body cannot read a ref meaningfully (a
+              // ref change produces no re-render). `pending` is passed false
+              // deliberately: `pendingRef` has no state twin, and
+              // `pendingAssistantId` — set in the same breath in streamRun and
+              // additionally seeded on a reopened tab — is a superset of it.
+              // Disabling changes opacity only; the 46×46 box never resizes, so
+              // the composer cannot shift (layout-stability rule).
+              disabled={sendDisabled({
+                inputEmpty: !input.trim(),
+                runInFlight: isRunInFlight({
+                  streaming: streamingId !== null,
+                  pending: false,
+                  pendingAssistantId,
+                }),
+              })}
               aria-label="Send research question"
               className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--accent)] text-white transition-colors hover:bg-[var(--accent-hover)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
               style={{ boxShadow: "0 2px 8px rgba(194,65,12,.22)" }}
