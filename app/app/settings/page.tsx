@@ -19,15 +19,29 @@ import { ModelPicker } from "@/components/ModelPicker";
  */
 
 // Providers offered in the select. Anthropic unlocked by Phase 3 (D-48).
+//
+// DECISION (review WR-07 — do NOT "restore" the removed fifth option as an
+// oversight): "Custom (OpenAI-compatible)" was REMOVED for this milestone rather
+// than made to work. It could not succeed at any layer — the registry holds no
+// custom models, so /api/keys/test had no probe model, Save is hard-gated on a
+// successful probe, and the run route rejects any model id absent from
+// MODEL_REGISTRY. Making it work would need a model-id text input threaded into
+// the probe plus relaxing that registry gate to "known provider + zero prices
+// recorded", which would put an unpriced model into a metered, money-correctness
+// demo whose whole premise is that every cost comes from verified event-time
+// prices (KEY-04, D-53). Nothing usable is lost: a custom base URL is still
+// reachable for all four real providers via the editable Base URL field.
 const PROVIDER_OPTIONS: { value: Provider; label: string; disabled?: boolean }[] =
   [
     { value: "openai", label: "OpenAI" },
     { value: "anthropic", label: "Anthropic (Claude)" },
     { value: "kimi", label: "Kimi / Moonshot" },
     { value: "openrouter", label: "OpenRouter" },
-    { value: "custom", label: "Custom (OpenAI-compatible)" },
   ];
 
+// Display labels for the saved-keys list. `custom` is deliberately RETAINED here
+// even though it is no longer offerable (see the decision above), so any row saved
+// before the removal still renders a human label instead of a raw slug.
 const PROVIDER_TITLE: Record<string, string> = {
   openai: "OpenAI",
   kimi: "Kimi / Moonshot",

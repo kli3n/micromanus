@@ -29,11 +29,21 @@ import { baseUrlSchema, BASE_URL_REJECTED } from "@/lib/keys/base-url";
  * runtime='nodejs' — node:crypto (AES-256-GCM) needs the Node runtime.
  */
 
-// Providers accepted by the save endpoint. Anthropic is rejected below (OQ-1)
-// but is included in the enum so we return the designed "arrives soon" copy
-// rather than a generic validation error.
-const bodySchema = z.object({
-  provider: z.enum(["openai", "kimi", "custom", "anthropic", "openrouter"]),
+/**
+ * Providers accepted by the save endpoint — the four whose keys a chat can
+ * actually use. Exported so the unit suite can exercise the boundary directly
+ * (the render-pdf route's `renderPdfBody` precedent).
+ *
+ * The OpenAI-compatible escape-hatch provider was removed from this enum by
+ * review WR-07: the registry holds no models for it, so the 1-token probe could
+ * never succeed and Save is hard-gated on that probe — a hand-crafted POST was
+ * the only way to create such a row, and no chat could ever have used it. The
+ * settings page carries the full decision record. `base_url` remains free-form
+ * (within the CR-03 public-http(s) gate), so a self-hosted or proxied endpoint is
+ * still reachable for any of the four real providers.
+ */
+export const bodySchema = z.object({
+  provider: z.enum(["openai", "kimi", "anthropic", "openrouter"]),
   base_url: baseUrlSchema,
   apiKey: z.string().min(1),
 });

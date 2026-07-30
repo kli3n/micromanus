@@ -1,5 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { toKeyMetadata } from "@/lib/keys/metadata";
+
+// The route module is imported below for the WR-07 provider-enum assertions. Its
+// only next/** reachable dependency is the server Supabase client, mocked here so
+// this file keeps running cleanly under node-env (the render-pdf-contract
+// precedent). Hoisted by Vitest — it does not affect the pure-projection tests.
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({
+    auth: { getClaims: async () => ({ data: { claims: { sub: "user-1" } } }) },
+  }),
+}));
+
+import { POST, bodySchema } from "@/app/api/keys/route";
 
 /**
  * KEY-03 / T-02key-01 security contract test: the /api/keys responses must NEVER
@@ -7,8 +19,13 @@ import { toKeyMetadata } from "@/lib/keys/metadata";
  * through the pure `toKeyMetadata` projection, so asserting the projection's
  * output shape is the automated guarantee that no internal field can escape.
  *
- * This test lives under lib/** (the Vitest include glob) and imports only the
- * plain projection module — NO next/react — so it runs cleanly under node-env.
+ * This test lives under lib/** (the Vitest include glob). It imports the plain
+ * projection module plus the route's zod boundary; the route's one next/**
+ * dependency (the server Supabase client) is mocked, so the file still runs
+ * cleanly under node-env with no next/headers on the graph.
+ *
+ * WR-07 additions at the bottom: the provider enum no longer accepts the
+ * OpenAI-compatible escape hatch, at the validator as well as in the UI.
  */
 
 // A stored-row fixture that DELIBERATELY includes every ciphertext field, plus
@@ -72,5 +89,61 @@ describe("toKeyMetadata (KEY-03 projection)", () => {
       ["base_url", "last4", "provider"].sort(),
     );
     expect(meta.base_url).toBeNull();
+  });
+});
+
+function post(body: unknown): Request {
+  return new Request("http://localhost/api/keys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("POST /api/keys provider enum (WR-07 — no unreachable provider)", () => {
+  it("rejects a provider:'custom' body with status 400", async () => {
+    const res = await POST(
+      post({
+        provider: "custom",
+        base_url: "https://api.example.com/v1",
+        apiKey: "sk-test",
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("does not accept 'custom' at the zod boundary", () => {
+    const parsed = bodySchema.safeParse({
+      provider: "custom",
+      base_url: "https://api.example.com/v1",
+      apiKey: "sk-test",
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("still accepts the four offerable providers", () => {
+    for (const provider of ["openai", "anthropic", "kimi", "openrouter"]) {
+      const parsed = bodySchema.safeParse({
+        provider,
+        base_url: "https://api.example.com/v1",
+        apiKey: "sk-test",
+      });
+      expect(parsed.success, provider).toBe(true);
+    }
+  });
+
+  it("keeps the CR-03 base-URL SSRF gate wired after the enum edit", () => {
+    for (const base_url of [
+      "http://169.254.169.254/latest/meta-data/",
+      "file:///etc/passwd",
+      "http://localhost:8080/v1",
+    ]) {
+      const parsed = bodySchema.safeParse({
+        provider: "openai",
+        base_url,
+        apiKey: "sk-test",
+      });
+      expect(parsed.success, base_url).toBe(false);
+    }
   });
 });

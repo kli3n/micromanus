@@ -25,8 +25,14 @@ import { MODEL_REGISTRY } from "@/lib/registry";
  * runtime='nodejs' — the SDK + outbound fetch want the Node runtime.
  */
 
-const bodySchema = z.object({
-  provider: z.enum(["openai", "kimi", "custom", "anthropic", "openrouter"]),
+/**
+ * Providers this probe accepts — the four with registry models, so every offered
+ * path can actually succeed (review WR-07; the settings page carries the decision
+ * record for the removed OpenAI-compatible escape hatch). Exported so the unit
+ * suite can exercise the boundary directly (the `renderPdfBody` precedent).
+ */
+export const bodySchema = z.object({
+  provider: z.enum(["openai", "kimi", "anthropic", "openrouter"]),
   base_url: baseUrlSchema,
   apiKey: z.string().min(1),
   model: z.string().min(1).optional(),
@@ -101,8 +107,9 @@ export async function POST(req: Request): Promise<Response> {
       return json({ ok: false, reason: "This provider cannot be tested yet" });
     }
 
-    // Pick the probe model: explicit request model, else cheapest per provider.
-    // custom has no registry entry, so it must supply its own model.
+    // Pick the probe model: an explicit `model` in the request body wins, else the
+    // cheapest selectable registry model for the provider. The explicit override is
+    // the surviving mechanism for probing a model the registry does not list.
     const probeModel = model ?? cheapestModel(provider);
     if (!probeModel) {
       return json({ ok: false, reason: "Choose a model to test" }, 400);
