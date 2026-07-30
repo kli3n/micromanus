@@ -15,6 +15,11 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // scripts/*.ts run under node type-stripping, whose ESM resolver requires an
+    // EXPLICIT ".ts" extension on relative specifiers (and cannot resolve the
+    // "@/*" paths below at all). scripts/eval-run.ts therefore imports
+    // ../lib/eval/vintage.ts by extension; legal here because noEmit is true.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "verbatimModuleSyntax": false,

@@ -13,10 +13,12 @@
  *
  * Per run it prints one block with PASS/FLAG/FAIL per check:
  *   EV-01  citation resolvability (max [n] <= registry size; dense server numbering;
- *          "Also found" search hits never numbered)
+ *          "Also found" search hits never numbered) — SKIPs on a pre-03-04
+ *          vintage run, which has no server-minted numbering to resolve against
  *   EV-03  quoted-span verbatim check against the STORED extraction of the cited
  *          source (whitespace/quote-normalized; ellipsis fragments independently;
- *          near-misses flagged for human adjudication)
+ *          near-misses flagged for human adjudication) — SKIPs on the same
+ *          vintage, whose rows predate 03-07 extract persistence
  *   EV-04  distinct eTLD+1 count + pairwise title-similarity syndication flags
  *   EV-05  assist print (n · domain · title · date-if-present) — human judges on data
  *   EV-12/14 cost recompute from the four token columns x four STORED prices
@@ -28,10 +30,26 @@
  * and ends with the AI-SPEC § 7 triage-signal list so "which run do I open
  * first" is answered mechanically.
  *
- * Exit code: non-zero when any Critical check fails (EV-01 / EV-03 / EV-12 /
- * EV-14 / EV-10). FLAGs never change the exit code — they order human review.
+ * Verdict levels: PASS / FLAG / FAIL / SKIP. A SKIP means the check is
+ * UNSATISFIABLE for this row rather than satisfied — currently only EV-01 and
+ * EV-03 can skip, and only for a pre-03-04 "vintage" run that persisted neither
+ * of the two markers those checks audit against (see lib/eval/vintage.ts). A
+ * SKIP prints its own reason and is neither a pass nor a failure.
+ *
+ * Exit code: non-zero when any Critical check FAILS (EV-01 / EV-03 / EV-12 /
+ * EV-14 / EV-10) — Critical checks still fail closed. FLAGs never change the
+ * exit code (they order human review), and neither does a SKIP: only
+ * `level === "FAIL" && critical` reaches the failure counter.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+// Relative .ts import, NOT "@/lib/…": this script runs under node
+// type-stripping, which cannot resolve the tsconfig path alias (the same
+// constraint that forces the lib/pricing.ts duplication at lines 131-169
+// below). lib/eval/vintage.ts is zero-import precisely so it loads here.
+import {
+  isPreNumberingVintage,
+  PRE_NUMBERING_VINTAGE_SKIP_REASON,
+} from "../lib/eval/vintage.ts";
 
 // ============================ env (rls-probe convention) ============================
 function requireEnv(...names: string[]): string {
@@ -283,7 +301,12 @@ function endsCleanly(text: string): boolean {
 }
 
 // ============================ per-run verdict plumbing ============================
-type Level = "PASS" | "FLAG" | "FAIL";
+/**
+ * "SKIP" = this check is UNSATISFIABLE for this row, not satisfied by it. It is
+ * deliberately NOT a pass: it never counts toward the failure tally and never
+ * touches the exit code (see the counter increment in main()).
+ */
+type Level = "PASS" | "FLAG" | "FAIL" | "SKIP";
 interface Verdict {
   check: string;
   level: Level;
@@ -369,12 +392,26 @@ async function auditRun(
   const registry = [...registryByN.values()].sort((a, b) => a.n - b.n);
   const registrySize = registry.length;
 
+  // ---- vintage gate (03-11): can EV-01/EV-03 audit this row at all? ----
+  // Structural, drawn only from rows the run wrote, and deliberately independent
+  // of anything EV-01 asserts — a predicate derived from the audited condition
+  // would skip the check exactly when it would have failed. See
+  // lib/eval/vintage.ts for why this is the conjunction of BOTH 03-04 markers.
+  const toolRowCount = messages.filter((m) => m.role === "tool").length;
+  const preNumberingVintage = isPreNumberingVintage({
+    hasMeterCarrier: meter !== null,
+    registrySize,
+    toolRowCount,
+  });
+
   // ---- terminal answer = the run's assistant row (terminal-once write) ----
   const assistantRows = messages.filter((m) => m.role === "assistant");
   const answer = (assistantRows[assistantRows.length - 1]?.content ?? "").trim();
 
   // ============ EV-01 — citation resolvability & registry integrity (Critical) ============
-  {
+  if (preNumberingVintage) {
+    add("EV-01 citation resolvability", "SKIP", PRE_NUMBERING_VINTAGE_SKIP_REASON);
+  } else {
     const cited = citationNumbers(answer);
     const maxCited = cited.length > 0 ? Math.max(...cited) : 0;
     const dense =
@@ -412,7 +449,12 @@ async function auditRun(
   }
 
   // ============ EV-03 — quotation fidelity (Critical; code check, human on near-misses) ============
-  {
+  // Same vintage gate, same reason string, so the two skips read consistently:
+  // EV-03 audits against the page extraction 03-07 introduced, which this
+  // vintage never persisted.
+  if (preNumberingVintage) {
+    add("EV-03 quotation fidelity", "SKIP", PRE_NUMBERING_VINTAGE_SKIP_REASON);
+  } else {
     const spans = quotedSpans(answer);
     if (spans.length === 0) {
       add("EV-03 quotation fidelity", "PASS", "no double-quoted spans of >=4 words in the answer");
@@ -714,8 +756,19 @@ async function main(): Promise<void> {
     );
     const { verdicts, triage } = await auditRun(admin, run);
     for (const v of verdicts) {
-      const tag = v.level === "FAIL" ? (v.critical ? "FAIL(critical)" : "FAIL") : v.level;
+      const tag =
+        v.level === "FAIL"
+          ? v.critical
+            ? "FAIL(critical)"
+            : "FAIL"
+          : v.level === "SKIP"
+            ? "SKIP(vintage)"
+            : v.level;
+      // A skipped check prints its reason on this same line (v.detail carries
+      // PRE_NUMBERING_VINTAGE_SKIP_REASON) so the tag never needs explaining.
       console.log(`  ${tag.padEnd(14)} ${v.check}: ${v.detail}`);
+      // Only a CRITICAL FAIL moves the tally — a SKIP cannot reach this, which
+      // is what keeps it out of the exit code (T-03-11-04).
       if (v.level === "FAIL" && v.critical) criticalFailures++;
     }
     console.log(
