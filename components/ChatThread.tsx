@@ -13,6 +13,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { remarkCitations } from "@/lib/markdown/remark-citations";
 import { createClient } from "@/lib/supabase/client";
+import { subscribeChatChannel, type ChatMessageRow } from "@/lib/chat/realtime";
 import { getModel } from "@/lib/registry";
 import { BalanceBadge } from "@/components/BalanceBadge";
 import {
@@ -560,10 +561,15 @@ export function ChatThread({
   // Realtime (CHAT-08). The initiating tab owns the SSE stream and suppresses
   // Realtime application while streaming so it never double-applies its own
   // rows; the passive/reopened tab applies everything, keyed by server id.
+  //
+  // The channel is constructed, AUTHORIZED and observed in lib/chat/realtime.ts
+  // (gap G-1): both published tables are RLS-protected, and joining before the
+  // cookie session's access token reached the realtime transport made the socket
+  // join unauthenticated — alive, but delivering nothing to a reopened tab. What
+  // the handlers below do with a row is unchanged.
   useEffect(() => {
     if (!activeChatId) return;
-    const supabase = createClient();
-    const applyRow = (row: { id: string; role: string; content: string | null }) => {
+    const applyRow = (row: ChatMessageRow) => {
       // Suppress while this tab owns a run (SSE live OR pending after a broken
       // stream) — the thread is pushed whole at terminal status, never
       // incrementally, so partial rows must not leak in beside placeholders.
@@ -578,89 +584,39 @@ export function ChatThread({
         return [...prev, { id: row.id, role: row.role, content: row.content ?? "" }];
       });
     };
-    const channel = supabase
-      .channel(`chat:${activeChatId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `chat_id=eq.${activeChatId}`,
-        },
-        (payload) => applyRow(payload.new as never),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-          filter: `chat_id=eq.${activeChatId}`,
-        },
-        (payload) => applyRow(payload.new as never),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "runs",
-          filter: `chat_id=eq.${activeChatId}`,
-        },
-        (payload) => {
-          const run = payload.new as {
-            status?: string;
-            iterations?: number;
-            started_at?: string;
-          } | null;
-          // Run-meter feed (STAT-06, 03-03): pick up the per-pass iterations /
-          // started_at writes for tabs that do NOT own the run — the same
-          // initiating-tab suppression guard as applyRow (the initiating tab
-          // gets its iterations from the SSE `meter` events instead).
-          if (run && !streamingRef.current && !pendingRef.current) {
-            setRealtimeRun((prev) => ({
-              iterations: Math.max(prev?.iterations ?? 0, run.iterations ?? 0),
-              startedAt: run.started_at ?? prev?.startedAt,
-            }));
-          }
-          // Run-status changes drive no banner (D-25/26). A TERMINAL run status
-          // is the authoritative "thread is complete" signal for EVERY tab:
-          // passive/reopened tabs converge here, and the initiating tab relies
-          // on it when its SSE stream broke or stalled without ever throwing
-          // (the case a catch-based reconcile can never see). Reconciliation is
-          // idempotent (whole-thread replace), so racing the SSE `done` event
-          // is harmless.
-          const status = run?.status;
-          if (!status || status === "running") return;
-          if (
-            status !== "succeeded" &&
-            status !== "failed" &&
-            status !== "budget_exhausted"
-          ) {
-            return;
-          }
-          void settleFromDb();
-        },
-      )
-      // Join observability (CHAT-08). `.subscribe()` without a status callback
-      // swallows CHANNEL_ERROR / TIMED_OUT / CLOSED entirely — including the
-      // case where the server REJECTS a postgres_changes binding (realtime-js
-      // RealtimeChannel.ts:469-473 unsubscribes and errors the channel when the
-      // echoed filter set does not match what was requested). A silent channel
-      // is indistinguishable from an idle one, which is exactly how the G-1
-      // freeze hid. This logs and NOTHING else: no React state, no banner, no
-      // toast, no unread marker (D-25/D-26 — reconnect stays seamless). Log
-      // arguments are the status string and the chat id ONLY — never a token,
-      // session, or row payload (T-03-08-02).
-      .subscribe((status) => {
-        if (status !== "SUBSCRIBED") {
-          console.error("[chat-realtime] channel status", status, activeChatId);
+    return subscribeChatChannel({
+      chatId: activeChatId,
+      onMessageRow: applyRow,
+      onRunRow: (run) => {
+        // Run-meter feed (STAT-06, 03-03): pick up the per-pass iterations /
+        // started_at writes for tabs that do NOT own the run — the same
+        // initiating-tab suppression guard as applyRow (the initiating tab
+        // gets its iterations from the SSE `meter` events instead).
+        if (run && !streamingRef.current && !pendingRef.current) {
+          setRealtimeRun((prev) => ({
+            iterations: Math.max(prev?.iterations ?? 0, run.iterations ?? 0),
+            startedAt: run.started_at ?? prev?.startedAt,
+          }));
         }
-      });
-    return () => {
-      supabase.removeChannel(channel);
-    };
+        // Run-status changes drive no banner (D-25/26). A TERMINAL run status
+        // is the authoritative "thread is complete" signal for EVERY tab:
+        // passive/reopened tabs converge here, and the initiating tab relies
+        // on it when its SSE stream broke or stalled without ever throwing
+        // (the case a catch-based reconcile can never see). Reconciliation is
+        // idempotent (whole-thread replace), so racing the SSE `done` event
+        // is harmless.
+        const status = run?.status;
+        if (!status || status === "running") return;
+        if (
+          status !== "succeeded" &&
+          status !== "failed" &&
+          status !== "budget_exhausted"
+        ) {
+          return;
+        }
+        void settleFromDb();
+      },
+    });
   }, [activeChatId]);
 
   /**
