@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useReducedMotion } from "@/components/hooks/useReducedMotion";
 
 /**
  * ArtifactCard (RSCH-03/RSCH-04, D-39, D-43, D-46) — the PDF report download
@@ -136,10 +137,12 @@ export function ArtifactCard({
   const [snapped, setSnapped] = useState(false);
   const prevStateRef = useRef(state);
 
-  const reduceMotion =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // WR-09: the preference is NEVER read in the render body (that was a
+  // hydration mismatch and a preference that went stale until reload). The
+  // transition itself now lives in CSS; this boolean exists only to SKIP the
+  // snap-then-fade effect below, which CSS cannot express — un-transitioning it
+  // would still flash the element to opacity 0 and back across two frames.
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     if (prevStateRef.current === state) return;
@@ -213,16 +216,25 @@ export function ArtifactCard({
             { background: "linear-gradient(180deg,#FFF9F5,var(--surface))" }
       }
     >
+      {/* WR-09: the transition is CSS, never an inline style — an inline
+          `transition` outranks `motion-reduce:transition-none` and would
+          silently reinstate the bug. The two class sets are MUTUALLY EXCLUSIVE
+          on purpose: while `snapped` the element carries `transition-none`, so
+          the drop to opacity 0 is instantaneous and only the fade BACK animates.
+          A single unconditional `transition-opacity` would animate both
+          directions, turning the crisp snap-then-fade into a 120ms fade-out
+          followed by a fade-in. Two competing transition-property utilities also
+          have equal specificity, so applying both would leave the winner to
+          stylesheet source order. Only the opacity VALUE stays inline — it is
+          the driven value. */}
       <div
-        className="flex w-full min-w-0 items-center gap-[13px]"
-        style={
-          snapped
-            ? { opacity: 0, transition: "none" }
-            : {
-                opacity: 1,
-                transition: reduceMotion ? "none" : "opacity 120ms ease",
-              }
+        className={
+          "flex w-full min-w-0 items-center gap-[13px] " +
+          (snapped
+            ? "transition-none"
+            : "transition-opacity duration-[120ms] ease-[ease] motion-reduce:transition-none")
         }
+        style={{ opacity: snapped ? 0 : 1 }}
       >
         {/* 40×40 icon tile */}
         <div
