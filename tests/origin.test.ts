@@ -88,6 +88,24 @@ describe("CR-04: an un-vouched forwarded host never receives the session cookie"
     originOf(reqWith({ "x-forwarded-host": "attacker.example" }));
     expect(spy).toHaveBeenCalled();
   });
+
+  it("refuses a THIRD-PARTY *.vercel.app deployment — the platform suffix vouches for nothing (WR-03)", () => {
+    // Any Vercel customer — including an attacker — can deploy under
+    // *.vercel.app. A wildcard on the suffix made millions of third-party
+    // deployments valid destinations for the session cookie; only self.host,
+    // loopback, and the explicit env allowlist may vouch for a candidate.
+    for (const foreign of [
+      "attacker-project.vercel.app",
+      "evil.vercel.app",
+      "micromanus-lookalike.vercel.app",
+      "a.b.vercel.app",
+      "attacker.vercel.app:443",
+    ]) {
+      expect(originOf(reqWith({ "x-forwarded-host": foreign })), foreign).toBe(
+        "https://micromanus.vercel.app",
+      );
+    }
+  });
 });
 
 describe("CR-04: Correction C3 is preserved — the origin still comes from the request", () => {

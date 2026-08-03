@@ -235,13 +235,19 @@ export function originOf(req: Request): string {
   if (!candidate) return fallback; // vercel dev without x-forwarded-*
 
   const local = isLocalHostname(candidate);
+  // Review WR-03: there is deliberately NO `*.vercel.app` wildcard here. That
+  // suffix vouches for every deployment by every Vercel customer — including an
+  // attacker's — as a destination for the session cookie + full report body,
+  // and CR-04's rationale ("deriving the destination of a credential from an
+  // unvalidated client-settable header") applies to it verbatim under
+  // `vercel dev` / `next start` / any future proxy where x-forwarded-host is
+  // client-settable. `self.host` + the env entries below already cover every
+  // legitimate own-deployment host (production, branch, preview).
   const allowed =
     // The host this function was actually invoked on (covers `vercel dev`,
     // `next dev`, and any case where host == the real deployment host).
     candidate === self.host.toLowerCase() ||
     local ||
-    // Vercel deployment + branch/preview hosts.
-    /^[a-z0-9-]+(\.[a-z0-9-]+)*\.vercel\.app(:\d+)?$/.test(candidate) ||
     // Explicitly configured hosts, when present.
     [
       process.env.NEXT_PUBLIC_SITE_HOST,
