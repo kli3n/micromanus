@@ -177,11 +177,24 @@ export async function settleReport(deps: SettleDeps, job: SettleJob): Promise<vo
   } finally {
     // EVERY path lands on a terminal status — the card can never stick at
     // pending. Each write is guarded so one failing cannot skip the other.
+    //
+    // Review WR-01 (the GW-01 class, DEBUGGING-LOG entry #8): supabase-js v2
+    // RESOLVES { error } on a Postgres refusal — it never rejects — so a bare
+    // try/catch around these awaits was dead code and a refused UPDATE left
+    // the artifact pending forever, silently. The resolved error is checked
+    // (its .code only, never a body — T-03-14-01) alongside the catch, which
+    // stays for anything genuinely thrown.
     try {
-      await deps.svc
+      const { error } = await deps.svc
         .from("artifacts")
         .update({ status: state, storage_path: storagePath })
         .eq("id", job.artifactId);
+      if (error) {
+        console.error(
+          "[artifact] artifacts settle write refused:",
+          error.code ?? "unknown",
+        );
+      }
     } catch (err) {
       console.error(
         "[artifact] artifacts settle write failed:",
@@ -190,7 +203,7 @@ export async function settleReport(deps: SettleDeps, job: SettleJob): Promise<vo
     }
     try {
       if (job.carrierMsgId) {
-        await deps.svc
+        const { error } = await deps.svc
           .from("messages")
           .update({
             // RC-02: on the degraded branch the body travels WITH the carrier —
@@ -204,6 +217,12 @@ export async function settleReport(deps: SettleDeps, job: SettleJob): Promise<vo
             ),
           })
           .eq("id", job.carrierMsgId); // Realtime UPDATE → the card settles
+        if (error) {
+          console.error(
+            "[artifact] carrier settle write refused:",
+            error.code ?? "unknown",
+          );
+        }
       }
     } catch (err) {
       console.error(

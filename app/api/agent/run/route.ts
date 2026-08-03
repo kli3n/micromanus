@@ -680,13 +680,25 @@ export async function POST(req: Request): Promise<Response> {
               err instanceof Error ? err.name : "error",
             );
             if (artifactId) {
+              // Review WR-01 (the GW-01 class): supabase-js RESOLVES { error }
+              // on a Postgres refusal — it never rejects — so the catch alone
+              // was dead code and a refused fallback write left the card
+              // pending forever, silently. Check the resolved error on both
+              // writes (code only, never a body); keep the catch for anything
+              // genuinely thrown.
               try {
-                await svc
+                const { error: artErr } = await svc
                   .from("artifacts")
                   .update({ status: "degraded" })
                   .eq("id", artifactId);
+                if (artErr) {
+                  console.error(
+                    `[artifact] run=${runIdStr} degraded fallback artifacts write refused:`,
+                    artErr.code ?? "unknown",
+                  );
+                }
                 if (carrierMsgId) {
-                  await svc
+                  const { error: carrierErr } = await svc
                     .from("messages")
                     .update({
                       // RC-02: the body rides along on the degraded carrier —
@@ -700,6 +712,12 @@ export async function POST(req: Request): Promise<Response> {
                       ),
                     })
                     .eq("id", carrierMsgId);
+                  if (carrierErr) {
+                    console.error(
+                      `[artifact] run=${runIdStr} degraded fallback carrier write refused:`,
+                      carrierErr.code ?? "unknown",
+                    );
+                  }
                 }
               } catch (settleErr) {
                 console.error(

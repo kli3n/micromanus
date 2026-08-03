@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   DEGRADED_CARRIER_MARKDOWN_CAP,
@@ -26,7 +26,9 @@ interface UpdateCall {
   id: string;
 }
 
-function fakeSvc(opts: { uploadError?: unknown; insertError?: unknown } = {}) {
+function fakeSvc(
+  opts: { uploadError?: unknown; insertError?: unknown; updateError?: unknown } = {},
+) {
   const calls = {
     artifactUpdates: [] as UpdateCall[],
     messageUpdates: [] as UpdateCall[],
@@ -54,7 +56,11 @@ function fakeSvc(opts: { uploadError?: unknown; insertError?: unknown } = {}) {
                 values,
                 id,
               });
-              return { error: null };
+              // WR-01: supabase-js RESOLVES { error } on a refusal — it never
+              // throws. A fake that always resolves { error: null } is more
+              // capable than reality (the entry-#8 trap) and cannot see a
+              // dead resolved-error guard; `updateError` drives that path.
+              return { error: opts.updateError ?? null };
             },
           };
         },
@@ -243,6 +249,36 @@ describe("settleReport — every exit path is terminal (D-43/D-46, T-3-52)", () 
     expect(calls.uploads).toHaveLength(1);
     expect(calls.artifactUpdates[0].values.storage_path).toBeNull();
     expectTerminal(calls, "degraded");
+  });
+
+  it("a REFUSED settle write resolves { error } and is LOGGED — the catch alone is dead code (WR-01)", async () => {
+    // supabase-js v2 resolves { error } on a Postgres refusal (DEBUGGING-LOG
+    // entry #8) — the old bare try/catch never fired, so a refused UPDATE left
+    // the artifact pending forever with nothing logged. Both terminal writes
+    // must still be ATTEMPTED and both refusals must reach console.error with
+    // the error code only (T-03-14-01: never a body).
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { svc, calls } = fakeSvc({ updateError: { code: "42501" } });
+      const fetchFn = fetchReturning(
+        new Response(JSON.stringify({ error: "pdf_unavailable" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      await settleReport(deps(fetchFn, svc), JOB); // must not throw
+      expect(calls.artifactUpdates).toHaveLength(1);
+      expect(calls.messageUpdates).toHaveLength(1);
+      const logged = spy.mock.calls.map((c) => c.join(" "));
+      expect(
+        logged.some((l) => l.includes("artifacts settle write refused") && l.includes("42501")),
+      ).toBe(true);
+      expect(
+        logged.some((l) => l.includes("carrier settle write refused") && l.includes("42501")),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("unexpected mid-path throw (arrayBuffer rejects): degraded, still terminal", async () => {
