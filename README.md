@@ -49,8 +49,8 @@ A deep-research AI agent with bring-your-own-key (BYOK) model access and per-cal
 ### Not built yet
 
 - **Phase 3 — Deep Research:** sub-question decomposition, inline citations with a sources list, the PDF report artifact, prompt caching + cache-savings metering, and the Anthropic-native adapter
-- **Phase 4 — Payments:** Stripe test-mode Checkout and the idempotent webhook credit grant (the ledger and `ref_id` idempotency index that make it safe already exist)
-- **Phase 5:** a dedicated UI refinement pass
+- Card payments — descoped per `docs/adr/0001-descope-card-payments.md`; the paywall is coupon-only (the ledger and `ref_id` idempotency index remain, backing coupon idempotency)
+- **Phase 4:** a dedicated UI refinement pass
 
 ## Stack
 
