@@ -793,7 +793,11 @@ export function ChatThread({
     let event = "";
     let dataStr = "";
     for (const line of lines) {
-      if (line.startsWith(":")) return; // heartbeat comment — ignore
+      // Review WR-05: skip the comment LINE, never the whole frame. Per the SSE
+      // spec a comment may legally share a frame with event:/data: lines; a
+      // `return` here would silently eat a coalesced done/error event — the
+      // wedged-placeholder failure mode this phase spent three rounds killing.
+      if (line.startsWith(":")) continue; // heartbeat comment — ignore the line
       if (line.startsWith("event:")) event = line.slice(6).trim();
       else if (line.startsWith("data:")) dataStr = line.slice(5).trim();
     }
