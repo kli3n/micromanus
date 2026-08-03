@@ -306,3 +306,66 @@ describe("fetchPage — redirects are followed manually and re-gated (CR-01)", (
     );
   });
 });
+
+/**
+ * EC-03. Roughly 11 of ~18 fetch attempts in the captured UAT run came back 403.
+ * A request that negotiates no content type at all is a cheap thing for an
+ * origin to refuse, so the tool now sends `Accept` and `Accept-Language`
+ * alongside its existing honest `User-Agent`. This is header COMPLETENESS, not
+ * user-agent spoofing — the agent still identifies itself, and these assertions
+ * exist to keep it that way.
+ */
+describe("fetchPage — content-negotiation headers (EC-03)", () => {
+  interface Init {
+    headers: Record<string, string>;
+  }
+
+  it("sends Accept and Accept-Language on the initial request, keeping the honest User-Agent", async () => {
+    let init: Init | undefined;
+    const fetchImpl = (async (_url: string, i: Init) => {
+      init = i;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => "<article><p>body text</p></article>",
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    await fetchPage("https://example.com/doc", { fetchImpl });
+
+    expect(init!.headers["User-Agent"]).toBe("MicroManus-Agent/1.0 (+research)");
+    expect(init!.headers["Accept"]).toContain("text/html");
+    expect(init!.headers["Accept"]).toContain("application/xhtml+xml");
+    expect(init!.headers["Accept"]).toContain("*/*");
+    expect(init!.headers["Accept-Language"]).toBe("en-US,en;q=0.9");
+  });
+
+  it("sends the same headers on every redirect hop, not just hop 0", async () => {
+    const seen: Record<string, string>[] = [];
+    const routes: Record<string, { status: number; location?: string; body?: string }> = {
+      "https://a.example/1": { status: 301, location: "https://b.example/2" },
+      "https://b.example/2": { status: 200, body: "<article><p>final</p></article>" },
+    };
+    const fetchImpl = (async (url: string, i: Init) => {
+      seen.push(i.headers);
+      const r = routes[url];
+      return {
+        ok: r.status >= 200 && r.status < 300,
+        status: r.status,
+        headers: {
+          get: (h: string) => (h.toLowerCase() === "location" ? (r.location ?? null) : null),
+        },
+        text: async () => r.body ?? "",
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    await fetchPage("https://a.example/1", { fetchImpl });
+
+    expect(seen).toHaveLength(2);
+    for (const h of seen) {
+      expect(h["User-Agent"]).toBe("MicroManus-Agent/1.0 (+research)");
+      expect(h["Accept"]).toContain("text/html");
+      expect(h["Accept-Language"]).toBe("en-US,en;q=0.9");
+    }
+  });
+});

@@ -4,6 +4,7 @@ import {
   INCOMPLETE_COPY,
   CONTEXT_TOO_LONG_COPY,
   TRUNCATED_STOP_REASONS,
+  FETCH_NO_RETRY_GUIDANCE,
   type AgentTools,
   type ChatMessage,
   type ModelChunk,
@@ -1366,5 +1367,158 @@ describe("GW-06: a terminal body already persisted is never clobbered by the fai
       content: MAPPED_COPY,
     });
     errSpy.mockRestore();
+  });
+});
+
+/**
+ * EC-03. In the captured UAT run roughly 11 of ~18 fetch attempts returned 403
+ * and one returned 429. Every one of those burned an iteration against the
+ * 12-cap and up to ten seconds against the 240s budget without adding a source,
+ * so the two cheapest levers are (1) telling the model not to retry the URL and
+ * (2) refusing to dial it twice even if it asks again.
+ */
+describe("EC-03 — a blocked page costs less (no-retry guidance + per-run failed-URL memo)", () => {
+  const fetch_page = (id: string, url: string): ToolCallRequest => ({
+    id,
+    name: "fetch_page",
+    arguments: JSON.stringify({ url }),
+  });
+  const BLOCKED = "https://blocked.example/report";
+
+  /** A fetch_page that throws on every call, counting its invocations. */
+  function alwaysBlocked() {
+    return vi.fn(() => Promise.reject(new Error("could not fetch the page (status 403)")));
+  }
+
+  it("appends no-retry guidance to the failure observation", async () => {
+    const db = fakeDb();
+    const tools = fakeTools({ fetch_page: alwaysBlocked() as unknown as AgentTools["fetch_page"] });
+    const model = scriptedModel([
+      { toolCalls: [fetch_page("tc1", BLOCKED)], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, tools));
+
+    const obs = JSON.stringify(model.calls[1]);
+    // The existing reason survives; only guidance is added.
+    expect(obs).toContain("could not fetch the page (status 403)");
+    expect(obs).toContain(FETCH_NO_RETRY_GUIDANCE);
+  });
+
+  it("invokes fetch_page EXACTLY ONCE when the model asks for the same failing URL on two turns", async () => {
+    const db = fakeDb();
+    const spy = alwaysBlocked();
+    const tools = fakeTools({ fetch_page: spy as unknown as AgentTools["fetch_page"] });
+    const model = scriptedModel([
+      { toolCalls: [fetch_page("tc1", BLOCKED)], usage: USAGE },
+      { toolCalls: [fetch_page("tc2", BLOCKED)], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, tools));
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    // The second turn still produced an observation, and it still says so.
+    const obs = JSON.stringify(model.calls[2]);
+    expect(obs).toContain(FETCH_NO_RETRY_GUIDANCE);
+  });
+
+  it("keys the memo by the SAME normalisation as the source registry", async () => {
+    const db = fakeDb();
+    const spy = alwaysBlocked();
+    const tools = fakeTools({ fetch_page: spy as unknown as AgentTools["fetch_page"] });
+    const model = scriptedModel([
+      { toolCalls: [fetch_page("tc1", "https://Blocked.example/report/")], usage: USAGE },
+      { toolCalls: [fetch_page("tc2", "https://blocked.example/report#part2")], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(() => {}, db, model, tools));
+
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("still emits a RESOLVED tool_status event for the short-circuited repeat", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const tools = fakeTools({ fetch_page: alwaysBlocked() as unknown as AgentTools["fetch_page"] });
+    const model = scriptedModel([
+      { toolCalls: [fetch_page("tc1", BLOCKED)], usage: USAGE },
+      { toolCalls: [fetch_page("tc2", BLOCKED)], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop(baseParams(s.send, db, model, tools));
+
+    const rows = s.events
+      .map((e) => e.data as KindPayload)
+      .filter((p) => p.tool === "fetch_page" && p.id === "tc2");
+    // The rail (live AND on a reopened tab) must see running -> done, or the
+    // repeat call would leave a spinner that never resolves.
+    expect(rows.map((p) => p.state)).toEqual(["running", "done"]);
+    const persisted = rowPayloads(db).filter(
+      (p) => p.tool === "fetch_page" && p.id === "tc2" && p.state === "done",
+    );
+    expect(persisted).toHaveLength(1);
+  });
+
+  it("mints NO [n] for a memoised URL even if the tool would have succeeded", async () => {
+    const { createSourceRegistry } = await import("@/lib/agent/sources");
+    const reg = createSourceRegistry();
+    const db = fakeDb();
+    let call = 0;
+    const spy = vi.fn(() => {
+      call += 1;
+      if (call === 1) return Promise.reject(new Error("could not fetch the page (status 403)"));
+      return Promise.resolve({ text: "now it works", domain: "blocked.example", tokensApprox: 3 });
+    });
+    const tools = fakeTools({ fetch_page: spy as unknown as AgentTools["fetch_page"] });
+    const model = scriptedModel([
+      { toolCalls: [fetch_page("tc1", BLOCKED)], usage: USAGE },
+      { toolCalls: [fetch_page("tc2", BLOCKED)], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop({ ...baseParams(() => {}, db, model, tools), sources: reg });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(reg.size()).toBe(0);
+    expect(JSON.stringify(model.calls[2])).not.toContain("[1] fetch_page");
+  });
+
+  it("never memoises a SUCCESSFUL fetch — the same URL twice still reuses its number", async () => {
+    const { createSourceRegistry } = await import("@/lib/agent/sources");
+    const reg = createSourceRegistry();
+    const db = fakeDb();
+    const spy = vi.fn(() =>
+      Promise.resolve({ text: "page text", domain: "ok.io", tokensApprox: 3 }),
+    );
+    const tools = fakeTools({ fetch_page: spy as unknown as AgentTools["fetch_page"] });
+    const model = scriptedModel([
+      { toolCalls: [fetch_page("tc1", "https://ok.io/a")], usage: USAGE },
+      { toolCalls: [fetch_page("tc2", "https://ok.io/a")], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ]);
+
+    await runAgentLoop({ ...baseParams(() => {}, db, model, tools), sources: reg });
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(reg.size()).toBe(1);
+    expect(JSON.stringify(model.calls[2])).toContain("[1] fetch_page(https://ok.io/a)");
+  });
+
+  it("is PER-RUN — a second runAgentLoop does not inherit the first run's failed URLs", async () => {
+    const spy = alwaysBlocked();
+    const tools = fakeTools({ fetch_page: spy as unknown as AgentTools["fetch_page"] });
+    const script = (): Turn[] => [
+      { toolCalls: [fetch_page("tc1", BLOCKED)], usage: USAGE },
+      { deltas: ["Done."], usage: USAGE },
+    ];
+
+    await runAgentLoop(baseParams(() => {}, fakeDb(), scriptedModel(script()), tools));
+    await runAgentLoop(baseParams(() => {}, fakeDb(), scriptedModel(script()), tools));
+
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });
