@@ -26,6 +26,12 @@
  *      start_run reaps it, succeeds, and moves no money for the reaped run.
  * Both require migration 0007 to be pushed (plan 03-19 owns that push).
  *
+ * Pushing 0007 (plan 03-19) also changed Scenario 3's answer: five parallel starts
+ * on ONE chat are now refused with run_in_flight / P0002 rather than
+ * insufficient_credits, because the in-flight check precedes the balance gate by
+ * design. Scenario 3 asserts the new code and Scenario 3b was added to keep
+ * start_run's balance gate (P0001) covered, since no other scenario reaches it.
+ *
  * Run: `npm run test:money`.
  * Requires env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY.
  * Exits non-zero on any violation; cleans up in finally.
@@ -201,8 +207,24 @@ async function main(): Promise<void> {
     const zeroBalance = await balanceOf(admin, uZero.id);
     assert(zeroBalance === 0, `balance-0 user still at 0 after rejected debit (got ${zeroBalance})`);
 
-    // ---- Scenario 3: N parallel start_run() at balance 1 -> exactly one wins ----
+    // ---- Scenario 3: N parallel start_run() on ONE chat -> exactly one wins ----
     // start_run is service_role-only and debits -1 while opening a run (0002).
+    //
+    // POST-0007 the four losers are refused with run_in_flight / P0002, NOT with
+    // insufficient_credits. That is the migration working as designed, not a
+    // regression: the in-flight check (step 3) deliberately precedes the balance
+    // gate (step 4), so a caller racing a live run on the SAME chat is told the
+    // truth about the run rather than being told it is out of credits. This is
+    // also the parallel half of the GC-01 bypass — two tabs firing at once —
+    // which Scenario 4 (a sequential replay) cannot reach.
+    //
+    // The FOR UPDATE lock is still what makes the outcome deterministic, and it
+    // is still load-bearing: without it all five would pass the `exists` check
+    // together, and the refusal would come from the partial unique index as a
+    // 23505 re-raised to P0002 by the nested handler. Either path is one debit.
+    //
+    // Scenario 3b below keeps start_run's OWN balance gate (P0001) covered, which
+    // this scenario stopped exercising the moment the in-flight check landed.
     uStartRun = await makeUser(admin, 'startrun');
     const seedRun = await admin
       .from('credits_ledger')
@@ -228,7 +250,7 @@ async function main(): Promise<void> {
     );
 
     let runSuccess = 0;
-    let runInsufficient = 0;
+    let runInFlight = 0;
     let runOther = 0;
     for (const r of runResults) {
       if (r.status === 'rejected') {
@@ -239,19 +261,19 @@ async function main(): Promise<void> {
       if (!error) {
         runSuccess++;
         assert(typeof data === 'string' && data.length > 0, `winning start_run returned a run uuid (got ${JSON.stringify(data)})`);
-      } else if (isInsufficient(error.message)) {
-        runInsufficient++;
+      } else if (error.code === 'P0002') {
+        runInFlight++;
       } else {
         runOther++;
-        console.error(`  unexpected start_run error: ${error.message}`);
+        console.error(`  unexpected start_run error: ${error.code} / ${error.message}`);
       }
     }
 
-    console.log(`concurrent start_run @ balance 1 (N=${PARALLEL_RUNS}):`);
+    console.log(`concurrent start_run on ONE chat @ balance 1 (N=${PARALLEL_RUNS}):`);
     assert(runSuccess === 1, `exactly one start_run succeeded (got ${runSuccess})`);
     assert(
-      runInsufficient === PARALLEL_RUNS - 1,
-      `the other ${PARALLEL_RUNS - 1} rejected with insufficient_credits (got ${runInsufficient})`,
+      runInFlight === PARALLEL_RUNS - 1,
+      `the other ${PARALLEL_RUNS - 1} rejected with run_in_flight / P0002 (got ${runInFlight})`,
     );
     assert(runOther === 0, `no unexpected start_run errors (got ${runOther})`);
 
@@ -259,6 +281,29 @@ async function main(): Promise<void> {
     assert(runBalance === 0, `final SUM(delta) is 0, never negative (got ${runBalance})`);
     const runRows = await runsCount(admin, uStartRun.id);
     assert(runRows === 1, `exactly one runs row exists for the user (got ${runRows})`);
+
+    // ---- Scenario 3b: start_run's OWN balance gate still fires (P0001) ----
+    // Same user, now at balance 0, but a DIFFERENT chat — so the in-flight check
+    // passes and execution reaches the balance gate. Without this, nothing proves
+    // start_run still refuses an out-of-credits caller: Scenario 3 now stops at
+    // the in-flight check and Scenario 4 funds balance 2 on purpose. It also pins
+    // the ORDERING both ways round — an in-flight chat reports P0002, a solvent-
+    // looking but broke caller on a free chat reports P0001, and neither masks
+    // the other.
+    const freshChat = await makeChat(admin, uStartRun.id, 'start_run-balance-gate-probe');
+    const brokeStart = await admin.rpc('start_run', {
+      p_user_id: uStartRun.id,
+      p_chat_id: freshChat,
+      p_model_id: MODEL,
+    });
+    console.log('start_run on a FREE chat @ balance 0:');
+    assert(brokeStart.error !== null, 'start_run at balance 0 was refused (did not open a run)');
+    assert(
+      brokeStart.error?.code === 'P0001',
+      `the refusal is P0001 / insufficient_credits, not the in-flight code (got ${brokeStart.error?.code ?? 'none'})`,
+    );
+    const brokeBalance = await balanceOf(admin, uStartRun.id);
+    assert(brokeBalance === 0, `the refused start opened no debit (balance still 0, got ${brokeBalance})`);
 
     // ---- Scenario 4: SEQUENTIAL replay on one chat -> the second is refused ----
     // This is the bypass GC-01 describes and the one Scenario 3 CANNOT catch.
