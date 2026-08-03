@@ -15,6 +15,7 @@ import { remarkCitations } from "@/lib/markdown/remark-citations";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeChatChannel, type ChatMessageRow } from "@/lib/chat/realtime";
 import { canStartRun, isRunInFlight, sendDisabled } from "@/lib/chat/run-guard";
+import { isStartRefusalDone } from "@/lib/chat/done-frame";
 import { getModel } from "@/lib/registry";
 import { BalanceBadge } from "@/components/BalanceBadge";
 import {
@@ -867,6 +868,30 @@ export function ChatThread({
       }
       case "done":
         sawTerminalRef.current = true;
+        // RC-01: a START-TIME REFUSAL also closes with `done`, carrying
+        // `runId: null` (sseErrorResponse). Nothing ran, so there is no run row
+        // and no persisted question — and settleFromDb → reconcileFromDb is a
+        // whole-list REPLACE, which would discard BOTH the optimistic local
+        // question and the refusal copy the preceding `error` frame just
+        // painted. On any chat with prior history that made every refusal
+        // invisible (the send appeared to do nothing at all). See
+        // lib/chat/done-frame.ts for why runId is the discriminator and why the
+        // ambiguous shapes deliberately resolve to "refusal".
+        if (isStartRefusalDone(data)) {
+          // Release ownership so the composer is usable again. The `error`
+          // handler normally does this, but this branch must stand on its own —
+          // a `done{runId:null}` with no preceding `error` frame would otherwise
+          // leave the placeholder spinning forever.
+          pendingRef.current = false;
+          setPendingAssistantId(null);
+          setStreamingId(null);
+          // Hand the typed question back so the user does not retype it. Only
+          // on THIS path: a real run's failure has the question persisted and
+          // re-rendered by settleFromDb, where restoring it would duplicate it
+          // into the composer. `cur ||` never clobbers text typed since.
+          setInput((cur) => cur || lastUserTextRef.current);
+          break;
+        }
         // No balance arithmetic here (WR-02) — settleFromDb's router.refresh()
         // re-renders the RSC parent and the sync effect above adopts the
         // server's number. See that comment for why the client cannot compute it.
