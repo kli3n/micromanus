@@ -562,7 +562,54 @@ export async function POST(req: Request): Promise<Response> {
     ];
   } catch (err) {
     console.error("[agent/run] post-debit setup failed:", err);
-    await svc.rpc("refund_run", { p_user_id: userId, p_run_id: runIdStr });
+    // Review WR-04 (closes the defect DEBUGGING-LOG entry #13 carried as known):
+    // two defects lived here. (1) The runs row `start_run` just opened was left
+    // status='running' — no terminal write — so migration 0007's in-flight
+    // check refused every retry in this chat for the next 330 seconds, right
+    // after the user was shown a transient "Could not start the run".
+    // refund_run does write the terminal status itself on its happy path, but a
+    // refused RPC left the row wedged; the explicit write below makes the
+    // terminal state unconditional (the loop's terminalStep ordering rule —
+    // and refund_run is gated on first_model_call_completed, not on status, so
+    // writing 'failed' first cannot break refund eligibility). (2) `svc.rpc`
+    // RESOLVES { error } — supabase-js never rejects — and the result was
+    // discarded, so a refused refund silently consumed the user's credit with
+    // nothing logged. Both writes individually guarded; the status write is
+    // attempted first so it lands even if the refund check throws.
+    try {
+      const { error: endErr } = await svc
+        .from("runs")
+        .update({ status: "failed", ended_at: new Date().toISOString() })
+        .eq("id", runIdStr);
+      if (endErr) {
+        console.error(
+          "[agent/run] setup-failure terminal write refused:",
+          endErr.code ?? "unknown",
+        );
+      }
+    } catch (terminalErr) {
+      console.error(
+        "[agent/run] setup-failure terminal write threw:",
+        terminalErr instanceof Error ? terminalErr.name : "error",
+      );
+    }
+    try {
+      const { error: refundErr } = await svc.rpc("refund_run", {
+        p_user_id: userId,
+        p_run_id: runIdStr,
+      });
+      if (refundErr) {
+        console.error(
+          "[agent/run] setup-failure refund refused:",
+          refundErr.code ?? "unknown",
+        );
+      }
+    } catch (refundThrow) {
+      console.error(
+        "[agent/run] setup-failure refund threw:",
+        refundThrow instanceof Error ? refundThrow.name : "error",
+      );
+    }
     return sseErrorResponse("setup_error", "Could not start the run.");
   }
 
