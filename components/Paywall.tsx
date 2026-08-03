@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { BalanceBadge } from "@/components/BalanceBadge";
 
 /**
- * Paywall (PAY-01/PAY-02/PAY-03, D-13/D-16/D-17) — the first step a reviewer
+ * Paywall (PAY-01/PAY-02/PAY-03, D-13/D-16) — the first step a reviewer
  * meets at `/app` when their credit balance is 0. Rendered by the server
  * balance-gate in `app/app/page.tsx` INSIDE the persistent AppShell chrome
  * (sidebar + topbar stay visible — D-16), never as a separate full-screen route.
@@ -18,6 +18,9 @@ import { BalanceBadge } from "@/components/BalanceBadge";
  * translated into the locked banners below (UX-01). On success it shows the
  * locked "5 credits added" banner then calls router.refresh() so the server page
  * re-reads the balance and flips the gate to the chat empty-state (D-15).
+ *
+ * The paywall is coupon-only — the card affordance (formerly D-17) was removed
+ * per `docs/adr/0001-descope-card-payments.md`.
  */
 type RedeemError = "empty" | "invalid" | "already_redeemed" | "auth" | "unknown";
 type Banner =
@@ -223,44 +226,6 @@ export function Paywall({ balance }: { balance: number }) {
           </svg>
           {pending ? "Redeeming…" : "Redeem coupon"}
         </button>
-      </div>
-
-      {/* D-17: disabled card-payment affordance with the "Soon" pill — never
-          implies a live payment flow before Phase 4. */}
-      <div className="mt-[14px] flex items-center justify-between gap-3 rounded-[var(--radius)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] px-4 py-[14px]">
-        <div className="flex items-center gap-[11px]">
-          <span
-            aria-hidden="true"
-            className="grid h-[34px] w-[34px] place-items-center rounded-[9px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-3)]"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-[17px] w-[17px]"
-            >
-              <rect x="2" y="5" width="20" height="14" rx="2" />
-              <path d="M2 10h20" />
-            </svg>
-          </span>
-          <div>
-            <div className="text-[13.5px] font-[600] text-[var(--text-3)]">
-              Pay with card
-            </div>
-            <div className="text-[12px] text-[var(--text-3)]">
-              $5 test-mode payment → 5 credits
-            </div>
-          </div>
-        </div>
-        <span
-          aria-disabled="true"
-          className="rounded-[999px] border border-[var(--border)] bg-[var(--surface-3)] px-[6px] py-[2px] text-[10px] font-[600] text-[var(--text-3)]"
-        >
-          Soon
-        </span>
       </div>
     </div>
   );
