@@ -357,6 +357,14 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
   let firstMarked = false;
   let iterations = 0;
   let acc = ""; // last assistant text (partial/final)
+  /**
+   * GW-06 clobber guard. True ONLY once a terminal body is DURABLY persisted —
+   * every assignment sits AFTER its await, never before, so the flag means
+   * "written", not "attempted". The catch block's content write reads it: a
+   * transient failure on the very last write of a good run must not overwrite
+   * the complete answer the user just watched stream with the failure copy.
+   */
+  let terminalBodyWritten = false;
   let planScanned = false; // parse-once guard (D-33) — set on detection, never re-scanned
   let meterRowId: string | undefined;
 
@@ -411,6 +419,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
       body.trim().length > 0 ? `${body}\n\n${BUDGET_COPY}` : BUDGET_COPY;
     await settleMeter();
     await db.updateMessageContent(assistantMsgId, content);
+    terminalBodyWritten = true; // AFTER the await — see the declaration (GW-06)
     await db.setRunStatus(runId, "budget_exhausted", iterations);
     send("done", { runId, status: "budget_exhausted" });
   };
@@ -565,6 +574,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
         }
         await settleMeter();
         await db.updateMessageContent(assistantMsgId, content);
+        terminalBodyWritten = true; // AFTER the await — see the declaration (GW-06)
         await db.setRunStatus(runId, "succeeded", iterations);
         send("done", { runId, status: "succeeded" });
         return;
@@ -648,9 +658,16 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
     await terminalStep("meter settle", () => settleMeter());
     // Terminal-once write: a failed run persists the clean error copy, never
     // the in-flight partial text (broken tokens must not outlive the run).
-    await terminalStep("terminal content write", () =>
-      db.updateMessageContent(assistantMsgId, mapped.message),
-    );
+    // GW-06: skipped when a terminal body already landed — reaching the catch
+    // AFTER a successful content write means only the status write blipped, and
+    // overwriting a delivered answer with the failure copy would destroy the
+    // whole artifact of a paid run. The step keeps its label and position so
+    // the terminalStep log line and step ordering are unchanged.
+    await terminalStep("terminal content write", async () => {
+      if (!terminalBodyWritten) {
+        await db.updateMessageContent(assistantMsgId, mapped.message);
+      }
+    });
     // LAST and UNCONDITIONAL — the only signal every client uses to stop
     // waiting. Nothing above may prevent it from being attempted, and it is the
     // ONE step that gets a second attempt (GW-01): every other step's failure
@@ -659,11 +676,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
     // future reopen. Two attempts, immediate, no timer — a setTimeout inside a
     // waitUntil task after the stream has closed is a new liveness risk for no
     // gain, and one immediate re-attempt is what the review asked for.
-    await terminalStep(
-      "run status",
-      () => db.setRunStatus(runId, "failed", iterations),
-      2,
-    );
+    await terminalStep("run status", () => db.setRunStatus(runId, "failed", iterations), 2);
     // Saturation fallback: on a provider 429, surface the next free OpenRouter
     // model(s) so the client can re-run the same question elsewhere. The payload
     // carries ONLY model-id strings (never `err`, its message, or the raw provider
