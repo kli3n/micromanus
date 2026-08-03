@@ -9,6 +9,7 @@ import {
   type QueuedReport,
 } from "@/lib/agent/loop";
 import {
+  DEGRADED_CARRIER_MARKDOWN_CAP,
   artifactCarrierPayload,
   insertPendingArtifact,
   settleReport,
@@ -653,9 +654,22 @@ export async function POST(req: Request): Promise<Response> {
                 content: artifactCarrierPayload(artifactId, q.title, "pending"),
               })) ?? "";
             // The run's complete source registry → the PDF bibliography (D-42).
+            //
+            // Review WR-02: renderPdfBody caps `sources` at 50 and `markdown`
+            // at 200k chars and answers 400 `bad_request` on violation — a
+            // violation the app itself can manufacture (the prompt tells the
+            // model to batch fetches; 12 iterations × 5 fetches = 60 sources,
+            // and a long report can pass 200k). Uncapped, the run that did the
+            // MOST research was the one guaranteed to lose its PDF, with
+            // "renderer failed" copy misattributing an app-chosen bound. Cap at
+            // the producer: the first 50 sources keep the bibliography, and the
+            // markdown bound reuses DEGRADED_CARRIER_MARKDOWN_CAP — the
+            // degraded-carrier path already truncates at exactly this constant,
+            // so the two paths agree by construction.
             const registrySources = sources
               .entries()
-              .map((e) => ({ n: e.n, title: e.title, url: e.url }));
+              .map((e) => ({ n: e.n, title: e.title, url: e.url }))
+              .slice(0, 50);
             await settleReport(
               {
                 fetchFn: fetch,
@@ -667,7 +681,7 @@ export async function POST(req: Request): Promise<Response> {
                 artifactId,
                 carrierMsgId,
                 title: q.title,
-                markdown: q.markdown,
+                markdown: q.markdown.slice(0, DEGRADED_CARRIER_MARKDOWN_CAP),
                 sources: registrySources,
                 userId,
                 chatId: finalChatId,
