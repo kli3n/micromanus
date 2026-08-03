@@ -13,6 +13,7 @@ import {
   insertPendingArtifact,
   settleReport,
 } from "@/lib/artifacts/db";
+import { createRunDb } from "@/lib/agent/run-db";
 import { DEEP_RESEARCH_SYSTEM } from "@/lib/agent/prompt";
 import { createSourceRegistry, type SourceRegistry } from "@/lib/agent/sources";
 import { createOpenAiCompatModel } from "@/lib/agent/models/openai-compat";
@@ -546,61 +547,12 @@ export async function POST(req: Request): Promise<Response> {
     return sseErrorResponse("setup_error", "Could not start the run.");
   }
 
-  // The service-role-backed Db the run lifecycle writes through.
-  const db: Db = {
-    async updateMessageContent(id, content) {
-      await svc.from("messages").update({ content }).eq("id", id);
-    },
-    async markFirstModelCall(rid) {
-      await svc.from("runs").update({ first_model_call_completed: true }).eq("id", rid);
-    },
-    async setRunStatus(rid, status, iterations) {
-      const patch: Record<string, unknown> = {
-        status,
-        ended_at: new Date().toISOString(),
-      };
-      if (iterations != null) patch.iterations = iterations;
-      await svc.from("runs").update(patch).eq("id", rid);
-    },
-    async setRunIterations(rid, iterations) {
-      // Per-pass write (Correction C2 / STAT-06): runs has replica identity
-      // full (migration 0003), so this UPDATE is the Realtime event a reopened
-      // tab's meter consumes. Non-terminal — never touches status/ended_at.
-      await svc.from("runs").update({ iterations }).eq("id", rid);
-    },
-    async insertUsageEvent(row) {
-      await svc.from("usage_events").insert(row);
-    },
-    async refundRun(rid) {
-      // Two-arg service-role RPC — BOTH the verified userId (closure) and runId
-      // (PAY-06). Idempotent via credits_ledger_refund_once.
-      await svc.rpc("refund_run", { p_user_id: userId, p_run_id: rid });
-    },
-    async insertToolMessage(row) {
-      // A persisted role='tool' status row (D-25 reopen parity). Replayed via
-      // Realtime so a reopened tab renders the same tool-status line.
-      const { data, error } = await svc
-        .from("messages")
-        .insert({
-          chat_id: row.chatId,
-          user_id: row.userId,
-          run_id: row.runId,
-          role: "tool",
-          content: row.content,
-        })
-        .select("id")
-        .single();
-      if (error || !data) {
-        console.error(`[agent/run] run=${row.runId} insertToolMessage failed:`, error);
-        return "";
-      }
-      return data.id as string;
-    },
-    async updateToolMessage(id, content) {
-      if (!id) return;
-      await svc.from("messages").update({ content }).eq("id", id);
-    },
-  };
+  // The service-role-backed Db the run lifecycle writes through. Extracted to
+  // lib/agent/run-db.ts (GW-01) so its five money/lifecycle writes CHECK the
+  // resolved `{ error }` — supabase-js never rejects on a Postgres refusal, so
+  // the inline version that lived here made loop.ts's terminalStep guard dead
+  // code in production. This is the single construction site.
+  const db: Db = createRunDb({ svc, userId });
 
   // The Model factory — the ONLY place a provider name picks an implementation
   // (D-48). Anthropic goes through the NATIVE Messages API wrapper (cache_control
