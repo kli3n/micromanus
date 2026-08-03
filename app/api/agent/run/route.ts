@@ -564,7 +564,17 @@ export async function POST(req: Request): Promise<Response> {
       ? createAnthropicModel({ apiKey, baseURL, modelId })
       : // `provider` only picks the completion-cap parameter NAME
         // (max_completion_tokens on openai, max_tokens elsewhere — WR-03).
-        createOpenAiCompatModel({ apiKey, baseURL, modelId, provider: spec.provider });
+        // `contextTokens` decides whether a cap is sent AT ALL (GW-04): the
+        // registry records `null` on ten of sixteen ids, and an unknown window
+        // means the provider's own default, never an app-chosen reservation
+        // that could itself cause a billed 400.
+        createOpenAiCompatModel({
+          apiKey,
+          baseURL,
+          modelId,
+          provider: spec.provider,
+          contextTokens: spec.contextTokens,
+        });
 
   // (h) Stream. waitUntil keeps the loop alive past client disconnect (CHAT-08).
   const finalChatId = chatId;
