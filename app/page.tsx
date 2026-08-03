@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { createClient } from "@/lib/supabase/server";
+
+// Renders as "Sign in · MicroManus" through the root layout's title template.
+// This is the page the old flat root title was written for (EC-09).
+export const metadata: Metadata = { title: "Sign in" };
 
 // The landing page is the ONLY public route (served at `/`). It renders the
 // wordmark, tagline, GitHub + Google OAuth buttons, and — when the callback

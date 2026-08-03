@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppShell } from "@/components/AppShell";
+
+// Group-level title for every authenticated page: "Workspace · MicroManus"
+// (EC-09). Deliberately NOT a per-chat generateMetadata — deriving the title
+// from the chat row would add a server read to every chat navigation for a
+// cosmetic finding, and the group title already satisfies it.
+export const metadata: Metadata = { title: "Workspace" };
 
 /**
  * Authoritative server-side route guard for the entire (app) group (AUTH-03).

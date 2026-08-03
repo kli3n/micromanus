@@ -13,8 +13,10 @@ import { Paywall } from "@/components/Paywall";
  *
  * balance <= 0  -> render <Paywall> inside the existing AppShell chrome (D-16).
  * balance  > 0  -> render the text/CSS chat empty-state hero (D-15). The Phase 1
- *                  PDF smoke-test hero is removed here (D-02 supersedes it); the
- *                  topbar PDF affordance in AppShell is untouched.
+ *                  PDF smoke-test hero was removed here (D-02 supersedes it),
+ *                  and the topbar PDF affordance in AppShell has since been
+ *                  retired too (EC-09) — no PDF smoke-test button ships in
+ *                  production chrome on any authenticated screen.
  */
 export default async function AppHome() {
   const supabase = await createClient();

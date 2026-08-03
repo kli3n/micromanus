@@ -1,4 +1,3 @@
-import { PdfTestButton } from "@/components/PdfTestButton";
 import { BalanceBadge } from "@/components/BalanceBadge";
 import { TopbarModelPicker } from "@/components/TopbarModelPicker";
 import { createClient } from "@/lib/supabase/server";
@@ -23,9 +22,10 @@ import { MODEL_REGISTRY } from "@/lib/registry";
  *     from every authenticated screen; the chat list linking each chat to
  *     /app/c/[chatId] (CHAT-02/03) with the balance-branched empty-state; and the
  *     user card + sign-out;
- *   - topbar: workspace crumb, the topbar <BalanceBadge> (PAY-04), the live
+ *   - topbar: workspace crumb, the topbar <BalanceBadge> (PAY-04), and the live
  *     <TopbarModelPicker> Model slot (KEY-05 — starts a new chat via
- *     /app/c/new?model=<id>, credit-gated), and PdfTestButton (D-12);
+ *     /app/c/new?model=<id>, credit-gated). The Phase-1 PDF smoke-test button
+ *     no longer ships here — see the retirement note at its former render site;
  *   - {children} in the canvas.
  *
  * Canonical paths only: /app/c/[chatId], /app/settings, /app/stats (D-11 — never
@@ -317,7 +317,15 @@ export async function AppShell({
               savedProviders={savedProviders}
             />
           )}
-          <PdfTestButton variant="topbar" />
+          {/* The D-12 / Phase-1 criterion-5 PDF smoke-test button was retired
+              from production chrome here (EC-09): it was a dev affordance
+              shipped to the reviewer-visible authenticated header, and it POSTs
+              to /api/render-pdf, so removing the render site also shrinks the
+              authenticated surface (T-03-16-05 — the route's own auth + zod
+              contract, D-40, remains the real boundary and is unchanged).
+              components/PdfTestButton.tsx is deliberately RETAINED on disk as
+              the Phase-1 evidence artifact. The production PDF paths are the
+              create_pdf_report tool and the per-message Export button. */}
         </header>
 
         <div
