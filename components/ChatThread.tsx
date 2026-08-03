@@ -515,6 +515,7 @@ export function ChatThread({
   balance: initialBalance,
   isNew,
   initialPendingAssistantId = null,
+  initialWedgedAssistantId = null,
   initialRunMeter = null,
 }: ChatThreadProps) {
   const router = useRouter();
@@ -581,6 +582,17 @@ export function ChatThread({
   // must apply normally so the terminal UPDATE fills the placeholder row.
   const [pendingAssistantId, setPendingAssistantId] = useState<string | null>(
     initialPendingAssistantId,
+  );
+  // GW-02: the server's verdict that the chat's latest run is past the 330s
+  // platform ceiling and cannot still be executing. Held, never re-derived — the
+  // page already decided this with the authoritative `runs.started_at`, and a
+  // second client-side derivation from a clock would be a second source of truth
+  // that could widen the in-flight decision the server narrowed (T-03-15-03).
+  // The only clears are the two real state changes below: `settleFromDb` (the
+  // thread reconciled from the DB) and `streamRun` (a fresh run started in this
+  // chat), so asking again removes the notice with no reload.
+  const [wedgedAssistantId, setWedgedAssistantId] = useState<string | null>(
+    initialWedgedAssistantId,
   );
   // The last user question sent — reused verbatim when a saturation switch
   // re-runs the same question on the fallback model (no re-typing).
@@ -773,6 +785,7 @@ export function ChatThread({
       pendingRef.current = false;
       streamingRef.current = false;
       setPendingAssistantId(null);
+      setWedgedAssistantId(null); // GW-02: the run is settled; the notice goes
       setStreamingId(null);
       setToolsByMsg({});
       // Meter state resets with the run — the persisted meter carrier row
@@ -904,6 +917,7 @@ export function ChatThread({
     sawTerminalRef.current = false;
     setStreamingId(assistantId);
     setPendingAssistantId(assistantId);
+    setWedgedAssistantId(null); // GW-02: a fresh run supersedes the wedged notice
     setLiveIterations(0); // fresh run — meter counts from its own SSE events
 
     // Stall watchdog: the server heartbeats every 15s, so a live connection is
@@ -1135,6 +1149,10 @@ export function ChatThread({
 
             const isUser = m.role === "user";
             const isPending = m.id === pendingAssistantId && m.content.length === 0;
+            // GW-02: the server minted EITHER pendingAssistantId OR this one,
+            // never both — so exactly one of the spinner placeholder and the
+            // wedged notice can render for an empty assistant row.
+            const isWedged = m.id === wedgedAssistantId && m.content.length === 0;
             const isStreaming = m.id === streamingId;
             const liveTools = toolsByMsg[m.id] ?? [];
             // A run is terminal for this message when this tab neither
@@ -1225,6 +1243,31 @@ export function ChatThread({
                         <span className="agent-spinner" aria-hidden="true" />
                         Researching — the full answer appears here when the run
                         completes…
+                      </div>
+                    ) : isWedged ? (
+                      /* Wedged-run notice (GW-02). The SAME box as the
+                         placeholder above — identical border, surface, padding,
+                         text size and line count — so swapping one for the
+                         other shifts nothing [BD §8 layout stability]. Three
+                         differences only: the spinner element is dropped; the
+                         note role replaces status + polite live region (this
+                         describes a settled state, it does not announce an
+                         update); and the copy. It is STATIC — it never moves,
+                         and carries no motion utility of any kind, so nothing
+                         here can touch a layout property [BD §5]. It is also
+                         the one place a wedged run explains itself: the
+                         composer beside it is ENABLED, because the server
+                         released the reload-surviving in-flight signal rather
+                         than minting it. The glyph sits in a 16px grid cell no taller
+                         than the 13px line box, so the row cannot grow. */
+                      <div
+                        role="note"
+                        className="flex items-center gap-[10px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[13px] text-[var(--text-2)]"
+                      >
+                        <span className="grid h-4 w-4 flex-none place-items-center text-[var(--warning)]">
+                          <WarnIcon />
+                        </span>
+                        This run stopped responding — ask again to continue.
                       </div>
                     ) : null}
                     {saturation?.assistantId === m.id && (
