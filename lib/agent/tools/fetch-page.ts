@@ -162,7 +162,19 @@ export async function fetchPage(
       res = await fetchImpl(current, {
         signal: controller.signal,
         redirect: "manual",
-        headers: { "User-Agent": "MicroManus-Agent/1.0 (+research)" },
+        // EC-03: roughly 11 of ~18 fetch attempts in the captured UAT run came
+        // back 403, and a request that negotiates NOTHING is a cheap thing for
+        // an origin to refuse. The two negotiation headers below are header
+        // COMPLETENESS, not user-agent spoofing: the User-Agent is
+        // deliberately byte-unchanged, so the agent still identifies itself
+        // honestly and no origin is deceived about the nature of the client.
+        // Sent on hop 0 AND on every redirect hop — a redirect target sees the
+        // same request the first one did.
+        headers: {
+          "User-Agent": "MicroManus-Agent/1.0 (+research)",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
       });
       if (res.status < 300 || res.status > 399) break;
 

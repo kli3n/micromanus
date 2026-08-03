@@ -37,6 +37,7 @@ import {
 import {
   citedFetchObservation,
   createSourceRegistry,
+  normalizeUrl,
   type SourceRegistry,
 } from "@/lib/agent/sources";
 import { costUsd, type ModelPrices } from "@/lib/pricing";
@@ -226,6 +227,20 @@ export const TRUNCATED_STOP_REASONS: ReadonlySet<string> = new Set([
   "error",
 ]);
 
+/**
+ * Appended to every failed-fetch observation (EC-03).
+ *
+ * In the captured UAT run roughly 11 of ~18 fetch attempts returned 403 and one
+ * returned 429. Each failure costs an iteration against the 12-cap (AGENT-01)
+ * and up to ten seconds against the 240s budget while adding no source, so a
+ * model that reflexively retries a blocked URL can spend a meaningful share of
+ * a paid run on nothing. This sentence is the cheapest lever: it sits in the
+ * same instruction family the model already reads in the observation, and it
+ * interpolates nothing — the `failedUrls` memo below is the enforcement.
+ */
+export const FETCH_NO_RETRY_GUIDANCE =
+  "Do not retry this URL — choose a different source.";
+
 // ============================ Tool definitions + arg schemas ============================
 export const webSearchArgs = z.object({ query: z.string().min(1) });
 export const fetchPageArgs = z.object({ url: z.string().min(1) });
@@ -368,6 +383,16 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
     params;
   const now = params.now ?? (() => Date.now());
   const sources = params.sources ?? createSourceRegistry();
+  /**
+   * EC-03 per-run failed-URL memo. Keyed by `normalizeUrl` — the SAME
+   * normalisation the source registry dedups with, imported rather than
+   * re-implemented: two normalisations would let one URL be both memoised here
+   * and re-minted there. Scoped to this call, so a later run may retry a URL
+   * that a transient 429 blocked earlier. Only failures enter it; a successful
+   * fetch is never memoised (a repeat there is already free — the registry
+   * reuses its [n]).
+   */
+  const failedUrls = new Set<string>();
 
   const conversation: ChatMessage[] = [...params.history];
   const startTime = now();
@@ -620,6 +645,7 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
             db,
             { chatId, userId, runId, iter: iterations },
             sources,
+            failedUrls,
             params.report,
           ),
         );
@@ -730,6 +756,8 @@ async function runToolCall(
   db: Db,
   ids: { chatId: string; userId: string; runId: string; iter: number },
   sources: SourceRegistry,
+  /** EC-03 per-run memo of URLs whose fetch already threw — see runAgentLoop. */
+  failedUrls: Set<string>,
   report?: { queued?: QueuedReport },
 ): Promise<string> {
   // Parse + validate the model's JSON arguments BEFORE executing (V5 / AGENT-05).
@@ -798,6 +826,27 @@ async function runToolCall(
       state: "running",
       url,
     });
+    // EC-03 short-circuit. The running row above is ALWAYS emitted first and
+    // resolved here, so the rail — live and on a reopened tab — never keeps a
+    // spinner for a call that returned. The return happens BEFORE any network
+    // call, which is also why this can never weaken the SSRF gate (T-03-17-04):
+    // `isSafeUrl` still runs on hop 0 and every redirect hop for every URL that
+    // IS fetched, and the memo can only prevent a request, never permit one.
+    // No [n] is minted, consistent with D-35 — a number exists only for a page
+    // that was actually read.
+    if (failedUrls.has(normalizeUrl(url))) {
+      await resolveToolStatus(send, db, rowId, {
+        id: tc.id,
+        tool: "fetch_page",
+        state: "done",
+        url,
+        note: "already failed earlier in this run — not retried",
+      });
+      return (
+        `fetch_page(${url}) → this page already failed earlier in this run; not retried. ` +
+        FETCH_NO_RETRY_GUIDANCE
+      );
+    }
     try {
       const r = await tools.fetch_page(url);
       // D-35: the [n] is minted HERE — after the fetch RESOLVED — and only
@@ -830,6 +879,10 @@ async function runToolCall(
       // A thrown FetchPageError (SSRF reject / timeout / fetch failure) becomes an
       // observation — the loop degrades, never crashes (AGENT-05).
       const reason = err instanceof Error ? err.message : "could not read the page";
+      // EC-03: remember the failure for the rest of THIS run so a second
+      // request for the same page costs no network round trip. Added inside the
+      // catch and nowhere else — successes are deliberately not memoised.
+      failedUrls.add(normalizeUrl(url));
       await resolveToolStatus(send, db, rowId, {
         id: tc.id,
         tool: "fetch_page",
@@ -837,7 +890,7 @@ async function runToolCall(
         url,
         note: reason,
       });
-      return `fetch_page(${url}) failed: ${reason}`;
+      return `fetch_page(${url}) failed: ${reason}. ${FETCH_NO_RETRY_GUIDANCE}`;
     }
   }
 
