@@ -1223,3 +1223,103 @@ describe("GW-01: the run-status terminal step is retried once, and a metering bl
     errSpy.mockRestore();
   });
 });
+
+describe("GW-06: a terminal body already persisted is never clobbered by the failure copy", () => {
+  // The catch block's terminal content write used to be unconditional. Once
+  // 03-14 Task 1 made the injected Db throw, a transient failure on the very
+  // LAST write of a successful run would overwrite the complete answer the user
+  // just watched stream with "The research run failed to complete." — the whole
+  // artifact of a paid run destroyed by a blip. `terminalBodyWritten` records
+  // that a body is DURABLY persisted (it is set after the await, not before)
+  // and the catch respects it. The run-status write stays unconditional and
+  // last: reporting `failed` is the honest record of what happened to the run
+  // row, even though the answer survives.
+  const RAW_PG_BODY = "POSTGRES_RAW_BODY: permission denied for table runs";
+  const MAPPED_COPY = "The research run failed to complete. Please try again.";
+  const ANSWER = "The full researched answer the user watched stream.";
+
+  it("success path: a failing setRunStatus does NOT overwrite the delivered answer", async () => {
+    const s = collectSend();
+    const db = fakeDb({ setRunStatus: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ deltas: [ANSWER], usage: USAGE, stopReason: "stop" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    // Exactly ONE content write, carrying the answer. A clobber would append a
+    // second call carrying MAPPED_COPY — this is the strongest available
+    // statement of "the answer survived".
+    expect(db.calls.updateMessageContent).toHaveLength(1);
+    expect(db.calls.updateMessageContent[0]).toMatchObject({
+      id: "a1",
+      content: ANSWER,
+    });
+    expect(JSON.stringify(db.calls.updateMessageContent)).not.toContain(MAPPED_COPY);
+    // ...and the run row is still honestly marked failed, unconditionally last.
+    expect(db.calls.setRunStatus[0]).toMatchObject({ status: "succeeded" });
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
+    errSpy.mockRestore();
+  });
+
+  it("budget path: a failing setRunStatus does NOT overwrite the locked budget copy", async () => {
+    const s = collectSend();
+    const db = fakeDb({ setRunStatus: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ toolCalls: [web_search("tc", "x")], usage: USAGE }]);
+
+    // Same clock shape as the 240s budget test above.
+    let firstRead = true;
+    const now = () => {
+      if (firstRead) {
+        firstRead = false;
+        return 0;
+      }
+      return 240_001;
+    };
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools(), now));
+
+    expect(db.calls.updateMessageContent).toHaveLength(1);
+    expect(db.calls.updateMessageContent.at(-1)!.content).toContain(BUDGET_COPY);
+    expect(db.calls.updateMessageContent.at(-1)!.content).not.toContain(MAPPED_COPY);
+    expect(db.calls.setRunStatus[0]).toMatchObject({ status: "budget_exhausted" });
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
+    errSpy.mockRestore();
+  });
+
+  it("no terminal body written yet: the mapped failure copy IS persisted (the guard is not over-applied)", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    expect(db.calls.updateMessageContent).toHaveLength(1);
+    expect(db.calls.updateMessageContent[0]).toMatchObject({
+      id: "a1",
+      content: MAPPED_COPY,
+    });
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "failed" });
+    errSpy.mockRestore();
+  });
+
+  it("a mid-run failure AFTER a completed tool turn still persists the failure copy — the flag tracks TERMINAL bodies only", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([
+      { deltas: ["thinking"], toolCalls: [web_search("tc1", "q")], usage: USAGE },
+      { throwAt: "before" },
+    ]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    // The first turn wrote no terminal body (it dispatched a tool), so the
+    // catch must still land the mapped copy.
+    expect(db.calls.updateMessageContent.at(-1)).toMatchObject({
+      content: MAPPED_COPY,
+    });
+    errSpy.mockRestore();
+  });
+});
