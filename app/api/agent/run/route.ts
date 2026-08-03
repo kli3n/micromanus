@@ -14,6 +14,7 @@ import {
   settleReport,
 } from "@/lib/artifacts/db";
 import { createRunDb } from "@/lib/agent/run-db";
+import { mapStartRunError } from "@/lib/agent/start-run-error";
 import { DEEP_RESEARCH_SYSTEM } from "@/lib/agent/prompt";
 import { createSourceRegistry, type SourceRegistry } from "@/lib/agent/sources";
 import { createOpenAiCompatModel } from "@/lib/agent/models/openai-compat";
@@ -489,17 +490,28 @@ export async function POST(req: Request): Promise<Response> {
     p_model_id: modelId,
   });
   if (debitErr || !runId) {
-    // P0001 = insufficient_credits. No user message inserted (no orphan, #6).
+    // Two refusals are classified, and BOTH are decided in Postgres:
+    //   P0001 = insufficient_credits (the balance gate, since Phase 2)
+    //   P0002 = run_in_flight        (GC-01, migration 0007)
+    // The in-flight rule now lives in `public.start_run` and in the
+    // `runs_one_running_per_chat` partial unique index, so a replayed curl, a
+    // second tab, or any future caller is refused identically. That demotes
+    // `lib/chat/run-guard.ts` to the UX layer it always documented itself as
+    // being — it stops the browser ASKING, Postgres decides.
+    //
+    // Only `debitErr?.code` crosses into the mapper, deliberately: the mapper's
+    // parameter is a bare string so no Postgres message, detail, hint, or
+    // constraint name can reach an SSE frame (a constraint name can echo a
+    // user-supplied value). Anything unclassified falls through to the generic
+    // branch below, which logs.
+    //
+    // No user message inserted yet, so no orphan (#6).
     if (createdNewChat) {
       // Best-effort: drop the just-created empty chat so nothing lingers.
       await svc.from("chats").delete().eq("id", chatId).eq("user_id", userId);
     }
-    if (debitErr?.code === "P0001") {
-      return sseErrorResponse(
-        "insufficient_credits",
-        "You are out of credits. Redeem a credit to run another research chat.",
-      );
-    }
+    const refusal = mapStartRunError(debitErr?.code);
+    if (refusal) return sseErrorResponse(refusal.code, refusal.message);
     console.error("[agent/run] start_run failed:", debitErr);
     return sseErrorResponse("debit_error", "Could not start the run.");
   }

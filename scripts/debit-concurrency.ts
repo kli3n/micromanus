@@ -16,6 +16,16 @@
  * a run. This mirrors the ephemeral-user + user-client helper shape used by
  * scripts/rls-probe.ts (kept self-contained so each probe runs standalone via `node`).
  *
+ * Scenarios 4 and 5 (Plan 03-18) prove migration 0007, which moved the
+ * "one question -> one debit" invariant out of the browser and into Postgres:
+ *   4. A SEQUENTIAL replay of start_run on a chat that already has a live run is
+ *      refused with P0002 / run_in_flight, and exactly one debit lands. This is
+ *      the bypass no lock can catch — the second request arrives after the first
+ *      has fully returned (a second tab, or a replayed curl).
+ *   5. A `running` row aged past the 330s reap window does NOT lock its chat out:
+ *      start_run reaps it, succeeds, and moves no money for the reaped run.
+ * Both require migration 0007 to be pushed (plan 03-19 owns that push).
+ *
  * Run: `npm run test:money`.
  * Requires env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY.
  * Exits non-zero on any violation; cleans up in finally.
@@ -97,6 +107,25 @@ function assert(cond: boolean, msg: string): void {
 const isInsufficient = (msg: string | undefined): boolean =>
   (msg ?? '').toLowerCase().includes('insufficient_credits');
 
+/** Seconds a `running` row must age before start_run's reaper clears it (migration 0007). */
+const STALE_RUN_AGE_SECONDS = 400;
+
+async function runStatusOf(admin: SupabaseClient, runId: string): Promise<string | null> {
+  const { data, error } = await admin.from('runs').select('status').eq('id', runId).single();
+  if (error) throw new Error(`runStatusOf failed: ${error.message}`);
+  return (data as { status: string } | null)?.status ?? null;
+}
+
+async function makeChat(admin: SupabaseClient, userId: string, title: string): Promise<string> {
+  const { data, error } = await admin
+    .from('chats')
+    .insert({ user_id: userId, model_id: MODEL, title })
+    .select('id')
+    .single();
+  if (error) throw new Error(`insert chat (${title}) failed: ${error.message}`);
+  return (data as { id: string }).id;
+}
+
 async function runsCount(admin: SupabaseClient, userId: string): Promise<number> {
   const { data, error } = await admin
     .from('runs')
@@ -111,6 +140,8 @@ async function main(): Promise<void> {
   let uConcurrent: { id: string; email: string; password: string } | null = null;
   let uZero: { id: string; email: string; password: string } | null = null;
   let uStartRun: { id: string; email: string; password: string } | null = null;
+  let uInFlight: { id: string; email: string; password: string } | null = null;
+  let uStale: { id: string; email: string; password: string } | null = null;
 
   try {
     // ---- Scenario 1: N parallel debits at balance 1 -> exactly one wins ----
@@ -228,8 +259,98 @@ async function main(): Promise<void> {
     assert(runBalance === 0, `final SUM(delta) is 0, never negative (got ${runBalance})`);
     const runRows = await runsCount(admin, uStartRun.id);
     assert(runRows === 1, `exactly one runs row exists for the user (got ${runRows})`);
+
+    // ---- Scenario 4: SEQUENTIAL replay on one chat -> the second is refused ----
+    // This is the bypass GC-01 describes and the one Scenario 3 CANNOT catch.
+    // Scenario 3 proves parallel starts are serialized by the FOR UPDATE lock;
+    // a lock cannot help when the second request arrives AFTER the first has
+    // fully returned — a second tab, or a replayed curl with no browser in the
+    // path at all. Balance 2 is deliberate: if the refusal came from the balance
+    // gate rather than the in-flight check, the user could still afford a second
+    // run and this scenario would pass for the wrong reason.
+    uInFlight = await makeUser(admin, 'inflight');
+    const seedInFlight = await admin
+      .from('credits_ledger')
+      .insert({ user_id: uInFlight.id, delta: 2, reason: 'refund', ref_id: `seed-${uInFlight.id}` });
+    if (seedInFlight.error) throw new Error(`seed in-flight balance=2 failed: ${seedInFlight.error.message}`);
+    const inFlightChat = await makeChat(admin, uInFlight.id, 'in-flight-probe');
+
+    const first = await admin.rpc('start_run', {
+      p_user_id: uInFlight.id,
+      p_chat_id: inFlightChat,
+      p_model_id: MODEL,
+    });
+    const second = await admin.rpc('start_run', {
+      p_user_id: uInFlight.id,
+      p_chat_id: inFlightChat,
+      p_model_id: MODEL,
+    });
+
+    console.log('sequential start_run replay on one chat @ balance 2:');
+    assert(
+      first.error === null && typeof first.data === 'string' && first.data.length > 0,
+      `first start_run opened a run (got ${JSON.stringify(first.data)} / ${first.error?.message ?? 'no error'})`,
+    );
+    assert(second.error !== null, 'the replayed start_run was refused (did not open a second run)');
+    assert(
+      second.error?.code === 'P0002',
+      `the refusal is P0002 / run_in_flight (got code ${second.error?.code ?? 'none'})`,
+    );
+    const inFlightBalance = await balanceOf(admin, uInFlight.id);
+    assert(inFlightBalance === 1, `exactly ONE debit landed for the two requests (balance 2 -> ${inFlightBalance}, want 1)`);
+    const inFlightRuns = await runsCount(admin, uInFlight.id);
+    assert(inFlightRuns === 1, `exactly one runs row exists after the replay (got ${inFlightRuns})`);
+
+    // ---- Scenario 5: a wedged `running` row is reaped, not a permanent lockout ----
+    // The partial unique index cannot be age-bounded (an index predicate must be
+    // IMMUTABLE and now() is only STABLE), so the bound lives in the function.
+    // 400s is comfortably past the 330s boundary without being so far past that
+    // clock drift between this host and Postgres could flip the assertion.
+    uStale = await makeUser(admin, 'stale');
+    const seedStale = await admin
+      .from('credits_ledger')
+      .insert({ user_id: uStale.id, delta: 1, reason: 'refund', ref_id: `seed-${uStale.id}` });
+    if (seedStale.error) throw new Error(`seed stale balance=1 failed: ${seedStale.error.message}`);
+    const staleChat = await makeChat(admin, uStale.id, 'stale-reap-probe');
+
+    const wedged = await admin
+      .from('runs')
+      .insert({
+        chat_id: staleChat,
+        user_id: uStale.id,
+        model_id: MODEL,
+        status: 'running',
+        started_at: new Date(Date.now() - STALE_RUN_AGE_SECONDS * 1000).toISOString(),
+      })
+      .select('id')
+      .single();
+    if (wedged.error) throw new Error(`insert wedged run failed: ${wedged.error.message}`);
+    const wedgedId = (wedged.data as { id: string }).id;
+
+    const afterReap = await admin.rpc('start_run', {
+      p_user_id: uStale.id,
+      p_chat_id: staleChat,
+      p_model_id: MODEL,
+    });
+
+    console.log(`start_run on a chat wedged at 'running' for ${STALE_RUN_AGE_SECONDS}s:`);
+    assert(
+      afterReap.error === null && typeof afterReap.data === 'string' && afterReap.data.length > 0,
+      `a stale run does NOT lock the chat out (got ${JSON.stringify(afterReap.data)} / ${afterReap.error?.message ?? 'no error'})`,
+    );
+    assert(afterReap.data !== wedgedId, 'the returned run is a NEW row, not the wedged one');
+    const wedgedStatus = await runStatusOf(admin, wedgedId);
+    assert(
+      wedgedStatus !== null && wedgedStatus !== 'running',
+      `the wedged row was reaped to a terminal status (got ${wedgedStatus ?? 'missing'})`,
+    );
+    const staleBalance = await balanceOf(admin, uStale.id);
+    assert(
+      staleBalance === 0,
+      `the reap itself moved no money — only the new run's debit did (balance 1 -> ${staleBalance}, want 0)`,
+    );
   } finally {
-    for (const u of [uConcurrent, uZero, uStartRun]) {
+    for (const u of [uConcurrent, uZero, uStartRun, uInFlight, uStale]) {
       if (u) {
         const { error } = await admin.auth.admin.deleteUser(u.id);
         if (error) console.error(`cleanup: deleteUser(${u.id}) failed: ${error.message}`);
@@ -243,7 +364,11 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  console.log('\nDEBIT REGRESSION PASSED: no double-spend under concurrency (debit_credit + start_run); zero-balance debit rejected.');
+  console.log(
+    '\nDEBIT REGRESSION PASSED: no double-spend under concurrency (debit_credit + start_run); ' +
+      'zero-balance debit rejected; a sequential replay on a live chat refused with run_in_flight; ' +
+      'a wedged running row reaped rather than locking the chat out.',
+  );
 }
 
 main().catch((err: unknown) => {
