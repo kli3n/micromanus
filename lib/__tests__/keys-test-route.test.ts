@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { probeErrorCopy, isTestableProvider } from "@/lib/keys/probe";
 
@@ -127,5 +128,33 @@ describe("POST /api/keys/test provider enum (WR-07 — no unreachable provider)"
       });
       expect(parsed.success, base_url).toBe(false);
     }
+  });
+});
+
+/**
+ * REGRESSION: review CR-01 — the probe sent `max_tokens: 1` to EVERY
+ * non-Anthropic provider, including openai, whose reasoning-capable models
+ * reject that legacy spelling outright (the same fact `completionCapFor` in
+ * lib/agent/models/openai-compat.ts branches on). Because Settings hard-gates
+ * Save on `verifyState === "ok"`, a 400ing probe meant a valid OpenAI key
+ * could never be saved. There is no client-injection seam in this route (the
+ * SDK is lazily imported), so this is a SOURCE pin — the same anti-drift
+ * pattern tests/artifact-settle.test.ts uses for the carrier call sites.
+ */
+describe("the openai probe branch never sends the legacy max_tokens spelling (CR-01)", () => {
+  const ROUTE_SRC = readFileSync(
+    new URL("../../app/api/keys/test/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  it("branches the completion cap on provider === 'openai'", () => {
+    expect(ROUTE_SRC).toMatch(
+      /\.\.\.\(provider === "openai" \? \{\} : \{ max_tokens: 1 \}\)/,
+    );
+  });
+
+  it("has exactly one unconditional max_tokens — the Anthropic Messages probe, where it is required", () => {
+    const unconditional = ROUTE_SRC.match(/^\s*max_tokens: 1,\s*$/gm) ?? [];
+    expect(unconditional).toHaveLength(1);
   });
 });

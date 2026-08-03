@@ -137,10 +137,21 @@ export async function POST(req: Request): Promise<Response> {
       }
       const OpenAI = (await import("openai")).default;
       const client = new OpenAI({ apiKey, baseURL: base_url });
+      // Review CR-01: OpenAI moved chat-completions to `max_completion_tokens`
+      // and its reasoning-capable models reject the legacy `max_tokens` spelling
+      // outright (`completionCapFor` in lib/agent/models/openai-compat.ts is the
+      // load-bearing statement of this fact) — so an unconditional `max_tokens: 1`
+      // 400'd every OpenAI probe and, because Settings hard-gates Save on the
+      // probe, a valid OpenAI key could never be saved. And a 1-token
+      // `max_completion_tokens` cap is no safer: on reasoning models it can
+      // itself error or return an empty completion. The probe's purpose is a
+      // 401-vs-200 auth signal, not output — auth is validated before token
+      // limits are — so the openai branch sends NO cap at all (provider default)
+      // while the compat providers keep the cheap 1-token bound.
       await client.chat.completions.create(
         {
           model: probeModel,
-          max_tokens: 1,
+          ...(provider === "openai" ? {} : { max_tokens: 1 }),
           messages: [{ role: "user", content: "ping" }],
         },
         { signal: controller.signal },
