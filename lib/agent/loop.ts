@@ -194,18 +194,36 @@ export const CONTEXT_TOO_LONG_COPY =
   "This conversation got too long for the model — start a new chat to continue.";
 
 /**
- * Stop/finish reasons that mean a CLEAN terminal finish. Matched as an
- * allow-list (never by enumerating the bad ones — `stop_reason` gained values
- * recently): Anthropic end_turn/stop_sequence/tool_use, openai-compat
- * stop/tool_calls. An UNDEFINED stopReason counts as clean — lenient providers
- * may omit it entirely.
+ * Stop/finish reasons that mean the answer was CUT OFF. Everything else —
+ * present or absent, recognised or not — is treated as a clean finish.
+ *
+ * GW-03: this replaced a 5-entry CLEAN_STOP_REASONS allow-list, and the
+ * direction matters more than the membership. The allow-list was internally
+ * inconsistent: an ABSENT reason was already documented as clean ("lenient
+ * providers may omit it"), so "unknown implies clean" was accepted for
+ * `undefined` and inverted for an unknown string. WR-03 then made the finish
+ * reason arrive on EVERY turn of exactly the providers that send no usage chunk
+ * — the free OpenRouter ids that are this project's demo default — so a single
+ * clean-but-unlisted spelling would have stamped a false "may be incomplete"
+ * note on every answer a reviewer ever saw.
+ *
+ * A deny-list is the one place this codebase prefers one, and the asymmetry is
+ * the reason: a false NEGATIVE costs a missing note on a rare truncation, while
+ * a false POSITIVE costs a warning on every answer of the primary demo. An
+ * unrecognised provider spelling is therefore treated as CLEAN, deliberately —
+ * do not "fix" this back into an allow-list.
+ *
+ * `MAX_TOKENS` — an upper-case variant — is intentionally NOT a member, and the
+ * match is intentionally case-SENSITIVE: matching loosely would re-open the
+ * class of guesses this change exists to remove. A provider that truncates is
+ * expected to say so in one of the five spellings below.
  */
-export const CLEAN_STOP_REASONS: ReadonlySet<string> = new Set([
-  "end_turn",
-  "stop_sequence",
-  "tool_use",
-  "stop",
-  "tool_calls",
+export const TRUNCATED_STOP_REASONS: ReadonlySet<string> = new Set([
+  "length",
+  "max_tokens",
+  "content_filter",
+  "model_context_window_exceeded",
+  "error",
 ]);
 
 // ============================ Tool definitions + arg schemas ============================
@@ -554,15 +572,18 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
       // ---- No tool calls => final answer. ----
       if (toolCalls.length === 0) {
         // Clean-finish guard (New Risk #1 / EV-11): a terminal turn whose stop
-        // reason falls outside the clean allow-list must NOT masquerade as a
-        // finished answer — append the locked degrade copy at the terminal
-        // write. Context-window overflow gets its own actionable copy.
+        // reason is one of the enumerated TRUNCATION spellings must NOT
+        // masquerade as a finished answer — append the locked degrade copy at
+        // the terminal write. Context-window overflow gets its own actionable
+        // copy. Any other reason, including an unrecognised one, is clean
+        // (GW-03 — see the constant's declaration for why the direction is a
+        // deny-list).
         // stripPlanBlock at the terminal write — the SAME function strips the
         // replay push below, keeping the cached prefix byte-consistent (D-49).
         const body = stripPlanBlock(acc);
         applyWeakMarkdownFallback(body);
         let content = body;
-        if (stopReason !== undefined && !CLEAN_STOP_REASONS.has(stopReason)) {
+        if (stopReason !== undefined && TRUNCATED_STOP_REASONS.has(stopReason)) {
           if (stopReason === "model_context_window_exceeded") {
             content =
               body.trim().length > 0
