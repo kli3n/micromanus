@@ -13,12 +13,13 @@
  *
  * Per run it prints one block with PASS/FLAG/FAIL per check:
  *   EV-01  citation resolvability (max [n] <= registry size; dense server numbering;
- *          "Also found" search hits never numbered) — SKIPs on a pre-03-04
- *          vintage run, which has no server-minted numbering to resolve against
+ *          "Also found" search hits never numbered) — SKIPs on a citation-free
+ *          pre-03-04 vintage run, which has no server-minted numbering to
+ *          resolve against; FLAGs rather than skipping when it does cite
  *   EV-03  quoted-span verbatim check against the STORED extraction of the cited
  *          source (whitespace/quote-normalized; ellipsis fragments independently;
- *          near-misses flagged for human adjudication) — SKIPs on the same
- *          vintage, whose rows predate 03-07 extract persistence
+ *          near-misses flagged for human adjudication) — same vintage gate,
+ *          whose rows predate 03-07 extract persistence
  *   EV-04  distinct eTLD+1 count + pairwise title-similarity syndication flags
  *   EV-05  assist print (n · domain · title · date-if-present) — human judges on data
  *   EV-12/14 cost recompute from the four token columns x four STORED prices
@@ -32,9 +33,15 @@
  *
  * Verdict levels: PASS / FLAG / FAIL / SKIP. A SKIP means the check is
  * UNSATISFIABLE for this row rather than satisfied — currently only EV-01 and
- * EV-03 can skip, and only for a pre-03-04 "vintage" run that persisted neither
- * of the two markers those checks audit against (see lib/eval/vintage.ts). A
+ * EV-03 can skip, and only for a pre-03-04 "vintage" run that persisted none of
+ * the three markers those checks audit against (see lib/eval/vintage.ts). A
  * SKIP prints its own reason and is neither a pass nor a failure.
+ *
+ * A vintage run whose answer DOES carry [n] citations is FLAGged rather than
+ * skipped (03-16 / GW-05): the check body runs in full and a would-be FAIL is
+ * recorded as FLAG with the vintage reason appended, so a Critical check is
+ * never silently ABSENT from the output on an answer that cites sources. Only a
+ * citation-free vintage row reaches SKIP.
  *
  * Exit code: non-zero when any Critical check FAILS (EV-01 / EV-03 / EV-12 /
  * EV-14 / EV-10) — Critical checks still fail closed. FLAGs never change the
@@ -48,6 +55,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // below). lib/eval/vintage.ts is zero-import precisely so it loads here.
 import {
   isPreNumberingVintage,
+  vintageVerdict,
+  PRE_NUMBERING_VINTAGE_FLAG_REASON,
   PRE_NUMBERING_VINTAGE_SKIP_REASON,
 } from "../lib/eval/vintage.ts";
 
@@ -134,6 +143,8 @@ interface ToolPayload {
   n?: number;
   title?: string;
   extract?: string;
+  /** create_pdf_report rows only (UI-SPEC locked copy: "Preparing report" / "Report queued"). */
+  label?: string;
   iterations?: number;
   elapsedMs?: number;
   results?: { title?: string; url?: string; domain?: string; n?: number }[];
@@ -365,13 +376,37 @@ async function auditRun(
   const searchResults: { title?: string; url?: string; n?: number }[] = [];
   let meter: ToolPayload | null = null;
   let duplicateMint = false;
+  /**
+   * 03-04 marker 3 (GW-05): the payload keys ONLY a post-03-04 deploy writes.
+   * `kind` = the plan card and the meter carrier; `n` + `extract` = a resolved
+   * fetch_page row (03-04 numbering, 03-07 extraction); `label` = both
+   * create_pdf_report rows. See lib/eval/vintage.ts for why this conjunct is
+   * the one no tool OUTCOME can suppress.
+   */
+  const POST_NUMBERING_KEYS = ["kind", "n", "extract", "label"] as const;
+  let hasPostNumberingPayload = false;
   for (const m of messages) {
     if (m.role !== "tool" || !m.content) continue;
     let p: ToolPayload;
+    let raw: unknown;
     try {
-      p = JSON.parse(m.content) as ToolPayload;
+      raw = JSON.parse(m.content);
+      p = raw as ToolPayload;
     } catch {
+      // A payload we cannot parse sets no marker — which fails toward AUDIT,
+      // the safe direction, exactly like every other conjunct.
       continue;
+    }
+    // Own-property PRESENCE on the raw parsed object, never truthiness on the
+    // narrowed fields: `n: 0` and `extract: ""` are legitimate persisted values
+    // and must still count as markers (threat T-03-16-03).
+    if (raw !== null && typeof raw === "object") {
+      for (const k of POST_NUMBERING_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(raw, k)) {
+          hasPostNumberingPayload = true;
+          break;
+        }
+      }
     }
     if (p.kind === "meter") meter = p;
     if (p.tool === "web_search" && p.state === "done" && Array.isArray(p.results)) {
@@ -392,27 +427,53 @@ async function auditRun(
   const registry = [...registryByN.values()].sort((a, b) => a.n - b.n);
   const registrySize = registry.length;
 
-  // ---- vintage gate (03-11): can EV-01/EV-03 audit this row at all? ----
-  // Structural, drawn only from rows the run wrote, and deliberately independent
-  // of anything EV-01 asserts — a predicate derived from the audited condition
-  // would skip the check exactly when it would have failed. See
-  // lib/eval/vintage.ts for why this is the conjunction of BOTH 03-04 markers.
-  const toolRowCount = messages.filter((m) => m.role === "tool").length;
-  const preNumberingVintage = isPreNumberingVintage({
-    hasMeterCarrier: meter !== null,
-    registrySize,
-    toolRowCount,
-    // Seam: the real POST_NUMBERING_KEYS detection lands with the verdict
-    // restructure. `false` here reproduces today's behaviour exactly.
-    hasPostNumberingPayload: false,
-  });
-
   // ---- terminal answer = the run's assistant row (terminal-once write) ----
   const assistantRows = messages.filter((m) => m.role === "assistant");
   const answer = (assistantRows[assistantRows.length - 1]?.content ?? "").trim();
 
+  // ---- vintage gate (03-11, hardened by 03-16/GW-05): can EV-01/EV-03 audit
+  // this row at all — and if not, must a human still see its numbers? ----
+  // Structural, drawn only from rows the run wrote, and deliberately independent
+  // of anything EV-01 asserts — a predicate derived from the audited condition
+  // would skip the check exactly when it would have failed. See
+  // lib/eval/vintage.ts for why this is the conjunction of ALL THREE 03-04
+  // markers. Computed AFTER `answer` because the verdict needs the citation
+  // scan; `answerHasCitations` is only PRESENCE, strictly weaker than the
+  // resolvability EV-01 audits, and can only move a verdict SKIP -> FLAG.
+  const toolRowCount = messages.filter((m) => m.role === "tool").length;
+  const vintageInput = {
+    hasMeterCarrier: meter !== null,
+    registrySize,
+    toolRowCount,
+    hasPostNumberingPayload,
+  };
+  // Spread rather than passed by name so the call keeps the literal-argument
+  // form that the shared-predicate source assertion in tests/eval-vintage.test.ts
+  // pins — that assertion is what proves this script consumes the shared module
+  // instead of a local copy of the predicate.
+  const preNumberingVintage = isPreNumberingVintage({ ...vintageInput });
+  const verdict = preNumberingVintage
+    ? vintageVerdict(vintageInput, {
+        answerHasCitations: citationNumbers(answer).length > 0,
+      })
+    : "AUDIT";
+  /**
+   * On a FLAGged vintage row the Critical checks run their FULL body and a
+   * would-be FAIL is recorded as FLAG with the vintage reason appended — so the
+   * check is never silently ABSENT from the output (threat T-03-16-02). One
+   * helper, shared by both gates, so the two cannot drift apart. A PASS stays a
+   * PASS, and FLAG never touches the exit code.
+   */
+  const addGated = (check: string, level: Level, detail: string, critical = false): void => {
+    if (verdict === "FLAG" && level === "FAIL") {
+      add(check, "FLAG", `${detail}\n      ${PRE_NUMBERING_VINTAGE_FLAG_REASON}`, critical);
+      return;
+    }
+    add(check, level, detail, critical);
+  };
+
   // ============ EV-01 — citation resolvability & registry integrity (Critical) ============
-  if (preNumberingVintage) {
+  if (verdict === "SKIP") {
     add("EV-01 citation resolvability", "SKIP", PRE_NUMBERING_VINTAGE_SKIP_REASON);
   } else {
     const cited = citationNumbers(answer);
@@ -421,28 +482,28 @@ async function auditRun(
       registry.every((e, i) => e.n === i + 1) && !duplicateMint;
     const numberedSearchHit = searchResults.some((r) => typeof r.n === "number");
     if (maxCited > registrySize) {
-      add(
+      addGated(
         "EV-01 citation resolvability",
         "FAIL",
         `max [n] cited = ${maxCited} but registry has ${registrySize} entr${registrySize === 1 ? "y" : "ies"} — an unregistered citation reached the reader`,
         true,
       );
     } else if (!dense) {
-      add(
+      addGated(
         "EV-01 citation resolvability",
         "FAIL",
         `registry numbering is not dense/unique (ns: ${registry.map((e) => e.n).join(",")})${duplicateMint ? " — two URLs share one n" : ""}`,
         true,
       );
     } else if (numberedSearchHit) {
-      add(
+      addGated(
         "EV-01 citation resolvability",
         "FAIL",
         `an "Also found" web_search hit carries a citation number — un-read hits must never be numbered`,
         true,
       );
     } else {
-      add(
+      addGated(
         "EV-01 citation resolvability",
         "PASS",
         `${cited.length} inline citation(s), max [n]=${maxCited}, registry=${registrySize} (dense, server-minted, no numbered search hits)`,
@@ -452,10 +513,12 @@ async function auditRun(
   }
 
   // ============ EV-03 — quotation fidelity (Critical; code check, human on near-misses) ============
-  // Same vintage gate, same reason string, so the two skips read consistently:
-  // EV-03 audits against the page extraction 03-07 introduced, which this
-  // vintage never persisted.
-  if (preNumberingVintage) {
+  // Same vintage verdict, same reason strings, so the two Critical checks read
+  // consistently and cannot drift: EV-03 audits against the page extraction
+  // 03-07 introduced, which this vintage never persisted. Neither check is ever
+  // silently ABSENT — on a citation-bearing vintage row the verdict is FLAG and
+  // the body runs, and only a citation-free vintage row reaches SKIP.
+  if (verdict === "SKIP") {
     add("EV-03 quotation fidelity", "SKIP", PRE_NUMBERING_VINTAGE_SKIP_REASON);
   } else {
     const spans = quotedSpans(answer);
@@ -498,7 +561,7 @@ async function auditRun(
         }
       }
       if (failures > 0) {
-        add(
+        addGated(
           "EV-03 quotation fidelity",
           "FAIL",
           `${failures}/${spans.length} quoted span(s) not verbatim in the cited source's stored extraction:\n      ${details.join("\n      ")}`,
