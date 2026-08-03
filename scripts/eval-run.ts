@@ -402,6 +402,9 @@ async function auditRun(
     hasMeterCarrier: meter !== null,
     registrySize,
     toolRowCount,
+    // Seam: the real POST_NUMBERING_KEYS detection lands with the verdict
+    // restructure. `false` here reproduces today's behaviour exactly.
+    hasPostNumberingPayload: false,
   });
 
   // ---- terminal answer = the run's assistant row (terminal-once write) ----
