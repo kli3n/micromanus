@@ -86,6 +86,14 @@ interface ChatThreadProps {
    * refreshed/reopened tab. Realtime fills/settles it at terminal status. */
   initialPendingAssistantId?: string | null;
   /**
+   * Set by the page INSTEAD of `initialPendingAssistantId` when the latest run
+   * still reads `'running'` but is older than the 330s platform ceiling
+   * (`isRunWedged`, review GW-02) — the run cannot still be executing, so the
+   * composer is released and this row renders the explanatory notice rather
+   * than a spinner that never stops. Exactly one of the two ids is ever set.
+   */
+  initialWedgedAssistantId?: string | null;
+  /**
    * Server-seeded run-meter state, set by the page ONLY while the latest run is
    * still executing (`runs.iterations` + `runs.started_at`). This is what makes
    * a reopened tab's FIRST painted frame show the true iteration count instead

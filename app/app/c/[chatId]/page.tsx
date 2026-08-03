@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isRunWedged } from "@/lib/chat/run-staleness";
 import { ChatThread, type ThreadMessage } from "@/components/ChatThread";
 
 /**
@@ -91,11 +92,22 @@ export default async function ChatPage({
   // "Researching…" placeholder as the initiating tab instead of a blank gap;
   // the Realtime terminal UPDATE then fills it in one shot.
   //
+  // BOUNDED (review GW-02). `pendingAssistantId` is one of the three
+  // `isRunInFlight` signals and the ONLY one that survives a reload, so minting
+  // it unconditionally from `status='running'` means a run that never reaches a
+  // terminal status — a hard kill at the 300s Fluid Compute ceiling, an evicted
+  // `waitUntil` task, or a Postgres refusal that survives both terminal-write
+  // attempts (GW-01) — holds this chat's composer disabled FOREVER, spinning,
+  // with no reason shown. `isRunWedged` bounds it by `RUN_WEDGE_CEILING_MS`
+  // (330s > the 300s platform ceiling, so no live run can reach it) HERE, at the
+  // minting point, where the authoritative `started_at` is in hand. Exactly one
+  // of the two ids is ever set: a wedged run releases the guard and instead
+  // surfaces the explanatory notice to the client.
+  //
   // `iterations` + `started_at` are selected for the RUN METER (03-UAT test 7).
   // The persisted kind:"meter" carrier row is written ONCE at loop start, with
   // {state:"running", startedAt} and deliberately no count — the count lives on
   // `runs.iterations`, rewritten per pass. Without seeding it here a reopened
-  // tab начина at 0 and can only be corrected by the NEXT Realtime `runs`
   // tab starts at 0 and can only be corrected by the NEXT Realtime `runs`
   // UPDATE; because the loop writes nothing to Postgres while a model call is
   // streaming, that is 3-17s away mid-run and NEVER arrives if the reload lands
@@ -105,6 +117,7 @@ export default async function ChatPage({
   // frame, plus a 21s all-silent tail window. Seeding makes the FIRST painted
   // frame authoritative.
   let pendingAssistantId: string | null = null;
+  let wedgedAssistantId: string | null = null;
   let initialRunMeter: { iterations: number; startedAt?: string } | null = null;
   const { data: latestRun } = await supabase
     .from("runs")
@@ -117,7 +130,14 @@ export default async function ChatPage({
     const lastEmptyAssistant = [...initialMessages]
       .reverse()
       .find((m) => m.role === "assistant" && m.content.length === 0);
-    pendingAssistantId = lastEmptyAssistant?.id ?? null;
+    const emptyAssistantId = lastEmptyAssistant?.id ?? null;
+    const wedged = isRunWedged({
+      status: latestRun.status as string | null,
+      startedAt: latestRun.started_at as string | null,
+      now: Date.now(),
+    });
+    if (wedged) wedgedAssistantId = emptyAssistantId;
+    else pendingAssistantId = emptyAssistantId;
     // Seeded ONLY for a running run: a terminal run's count comes from the
     // settled meter carrier payload, which already carries server-computed
     // iterations + elapsedMs.
@@ -135,6 +155,7 @@ export default async function ChatPage({
       balance={balance}
       isNew={false}
       initialPendingAssistantId={pendingAssistantId}
+      initialWedgedAssistantId={wedgedAssistantId}
       initialRunMeter={initialRunMeter}
     />
   );
