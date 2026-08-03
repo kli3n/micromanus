@@ -36,9 +36,17 @@ export interface ArtifactCarrier {
   artifactId: string;
   title: string;
   state: ArtifactState;
-  /** Forward-compat: the carrier does not carry the report markdown today
-   * (03-05 contract) — when a future deploy adds it, the degraded body
-   * prefers it over the terminal answer fallback. */
+  /**
+   * The report body, present on a DEGRADED carrier only (RC-02). It is the sole
+   * remaining route to the report when Chromium failed — D-43's substantive
+   * guarantee — so `degradedBodyToRender` renders it beneath the card and the
+   * card's own sub-line branches on the same verdict.
+   *
+   * Still OPTIONAL, and that is not vestigial: `pending` and `ready` carriers
+   * never carry it, and rows written by a pre-RC-02 deploy vintage do not
+   * either. Absence therefore falls back to the "…in the answer above."
+   * sub-line, which is the D-52 graceful-absence idiom, not a fresh gap.
+   */
   markdown?: string;
 }
 

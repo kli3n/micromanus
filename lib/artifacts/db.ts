@@ -79,11 +79,41 @@ export interface SettleJob {
   chatId: string;
 }
 
-/** The {kind:'artifact'} carrier payload (03-05 interface contract). */
+/**
+ * Upper bound on the report body one carrier row may carry (review RC-02).
+ *
+ * The row is broadcast over Realtime to every open tab, so it cannot be
+ * unbounded. 200k characters is far above any report a model can emit inside
+ * its output budget (~50k tokens), and well under Realtime's payload ceiling.
+ */
+export const DEGRADED_CARRIER_MARKDOWN_CAP = 200_000;
+
+/**
+ * The {kind:'artifact'} carrier payload (03-05 interface contract).
+ *
+ * RC-02 — `markdown` is not decoration, it is the ONLY path by which the user
+ * still receives the report when Chromium failed (D-43). The consumer chain has
+ * always read it (`parseArtifactCarrier` → `degradedBodyToRender` →
+ * ChatThread's body-below block) and this producer never wrote it, so
+ * `degradedBodyToRender` returned `null` on every real degraded artifact: the
+ * body-below block was dead code in production, and the card fell to its
+ * "…the full report is in the answer above." sub-line. That sentence is false
+ * in the normal case — `lib/agent/prompt.ts` instructs the model to pass "the
+ * complete report body as Markdown" to `create_pdf_report` and then "simply
+ * continue to your final answer", and `lib/agent/loop.ts` only overwrites a
+ * report body shorter than 200 characters. A 6,000-character report with a
+ * 600-character closing answer degraded to: no PDF, no report, and copy
+ * asserting the report was somewhere it was not.
+ *
+ * Attached ONLY on a degraded carrier. On `pending` there is nothing to show
+ * yet, and on `ready` the PDF itself is the artifact — carrying the body there
+ * would put a second copy of the report in a Realtime broadcast for no reader.
+ */
 export function artifactCarrierPayload(
   artifactId: string,
   title: string,
   state: "pending" | "ready" | "degraded",
+  markdown?: string,
 ): string {
   return JSON.stringify({
     id: `artifact-${artifactId}`,
@@ -91,6 +121,9 @@ export function artifactCarrierPayload(
     state,
     artifactId,
     title,
+    ...(state === "degraded" && markdown
+      ? { markdown: markdown.slice(0, DEGRADED_CARRIER_MARKDOWN_CAP) }
+      : {}),
   });
 }
 
@@ -160,10 +193,14 @@ export async function settleReport(deps: SettleDeps, job: SettleJob): Promise<vo
         await deps.svc
           .from("messages")
           .update({
+            // RC-02: on the degraded branch the body travels WITH the carrier —
+            // it is the only remaining route to the report (D-43). The helper
+            // drops it on the "ready" branch, so the success path is unchanged.
             content: artifactCarrierPayload(
               job.artifactId,
               job.title,
               state === "succeeded" ? "ready" : "degraded",
+              job.markdown,
             ),
           })
           .eq("id", job.carrierMsgId); // Realtime UPDATE → the card settles

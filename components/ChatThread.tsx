@@ -198,7 +198,7 @@ export interface ToolStatusEntry {
   results?: { title: string; url: string; domain: string }[]; // web_search done, <= 8
   // --- kind "artifact" (03-05 carrier contract, validated on read) ---
   artifactId?: string; // kind "artifact": artifacts row id for the download route
-  markdown?: string; // kind "artifact", forward-compat: degraded report body
+  markdown?: string; // kind "artifact", DEGRADED state only: the report body (RC-02)
   // The loop emits these on create_pdf_report rows, so the interface should not
   // silently omit them — but the client DERIVES its own copy from tool + state
   // and never reads them (T-03-15-05: a persisted row is untrusted, and the
@@ -1214,6 +1214,11 @@ export function ChatThread({
             // report is below when nothing is. Null means the answer bubble
             // above already carries that exact text — never that the user lost
             // the report (D-43's substantive guarantee is preserved).
+            // RC-02: that last sentence only became true when the PRODUCER
+            // started attaching the body to a degraded carrier
+            // (`artifactCarrierPayload`). Until then `artifact.markdown` was
+            // always undefined, so this was always null and the block at [7]
+            // below never rendered in production.
             const degradedBody =
               artifact?.state === "degraded"
                 ? degradedBodyToRender({

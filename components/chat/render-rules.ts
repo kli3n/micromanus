@@ -21,6 +21,15 @@
  * `degradedBodyToRender` is the rule that puts it on screen exactly once, and
  * the artifact card's sub-line branches on the SAME value so the copy cannot
  * claim the body is somewhere it is not.
+ *
+ * RC-02 — this rule is only half a fix without its PRODUCER. It reads the
+ * carrier's `markdown`, and `artifactCarrierPayload` did not write one, so it
+ * returned `null` on every real degraded artifact: the body-below block was
+ * dead code in production and the card always claimed the report was in the
+ * answer above, which the system prompt guarantees it is not. The producer now
+ * attaches the body on the degraded branch (`lib/artifacts/db.ts`). Read the two
+ * files together — a consumer rule that nothing feeds is indistinguishable from
+ * a correct one until someone traces the producer.
  */
 
 /**
@@ -118,20 +127,28 @@ export function toolLineParts(t: ToolLineInput): ToolLineParts {
 }
 
 /**
- * What (if anything) renders BENEATH a degraded artifact card (EC-06).
+ * What (if anything) renders BENEATH a degraded artifact card (EC-06/RC-02).
  *
  * Returns the carrier markdown when it is a non-empty string whose trimmed
  * value differs from the trimmed answer content; `null` otherwise.
  *
- * `null` means "the answer bubble above already carries this text" — it never
- * means "the user loses the report". The pre-fix code fell back to the answer
- * content whenever the carrier had no markdown of its own, which rendered the
- * identical body twice: once in the answer bubble and again below the card.
- * D-43's substantive guarantee ("the user always receives the report content
- * regardless") holds in BOTH outcomes; only its incidental phrase "rendered
- * in-chat below it" narrows, because honouring that phrase literally is what
- * produced the duplicate. There is no input for which both this value and the
- * answer content are empty.
+ * `null` means "the answer bubble above already carries this text". D-43's
+ * substantive guarantee ("the user always receives the report content
+ * regardless") holds in both outcomes — but ONLY because the producer supplies
+ * the body on a degraded carrier (`artifactCarrierPayload`, RC-02). That
+ * conditional is the whole point of this comment: for one round it read as an
+ * unconditional property of this function, while in production the carrier
+ * never had markdown, so `null` was returned for EVERY degraded artifact and
+ * the user genuinely lost a report that differed from the answer. If the
+ * producer ever stops attaching it, this rule silently regresses to that state
+ * again — `tests/artifact-settle.test.ts` pins the producer for exactly that
+ * reason.
+ *
+ * The pre-EC-06 code fell back to the answer content whenever the carrier had
+ * no markdown of its own, which rendered the identical body twice: once in the
+ * answer bubble and again below the card. Only D-43's incidental phrase
+ * "rendered in-chat below it" narrows, because honouring that phrase literally
+ * is what produced the duplicate.
  */
 export function degradedBodyToRender(args: {
   carrierMarkdown?: string | null;

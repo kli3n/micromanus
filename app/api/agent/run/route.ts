@@ -689,7 +689,15 @@ export async function POST(req: Request): Promise<Response> {
                   await svc
                     .from("messages")
                     .update({
-                      content: artifactCarrierPayload(artifactId, q.title, "degraded"),
+                      // RC-02: the body rides along on the degraded carrier —
+                      // the settle never ran, so this row is the user's only
+                      // remaining route to the report (D-43).
+                      content: artifactCarrierPayload(
+                        artifactId,
+                        q.title,
+                        "degraded",
+                        q.markdown,
+                      ),
                     })
                     .eq("id", carrierMsgId);
                 }

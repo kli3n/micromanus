@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { insertPendingArtifact, settleReport } from "@/lib/artifacts/db";
+import {
+  DEGRADED_CARRIER_MARKDOWN_CAP,
+  artifactCarrierPayload,
+  insertPendingArtifact,
+  settleReport,
+} from "@/lib/artifacts/db";
+import { parseArtifactCarrier } from "@/components/chat/ArtifactCard";
+import { degradedBodyToRender } from "@/components/chat/render-rules";
 
 /**
  * D-43/D-46 / T-3-52 — the deferred settle pipeline, driven entirely through
@@ -102,11 +110,34 @@ function expectTerminal(
     state: string;
     artifactId: string;
     title: string;
+    markdown?: string;
   };
   expect(payload.kind).toBe("artifact");
   expect(payload.state).toBe(state === "succeeded" ? "ready" : "degraded");
   expect(payload.artifactId).toBe("art-1");
   expect(payload.title).toBe("My Report");
+  // RC-02 — asserted on EVERY exit path, not in one dedicated test, because the
+  // defect was that the degraded carrier carried no body on ANY of them. The
+  // card's consumer chain (parseArtifactCarrier → degradedBodyToRender →
+  // ChatThread's body-below block) reads `markdown` and nothing wrote it, so a
+  // degrade lost the report entirely while the card claimed it was in the
+  // answer above.
+  if (state === "degraded") {
+    expect(payload.markdown).toBe(JOB.markdown);
+    // And it survives the read guard all the way to a rendered body.
+    const parsed = parseArtifactCarrier(payload);
+    expect(parsed?.markdown).toBe(JOB.markdown);
+    expect(
+      degradedBodyToRender({
+        carrierMarkdown: parsed?.markdown,
+        answerContent: "A short closing answer that is not the report.",
+      }),
+    ).toBe(JOB.markdown);
+  } else {
+    // The PDF itself is the artifact on the success path; a second copy of the
+    // report in a Realtime broadcast would have no reader.
+    expect(payload.markdown).toBeUndefined();
+  }
 }
 
 describe("settleReport — every exit path is terminal (D-43/D-46, T-3-52)", () => {
@@ -260,5 +291,134 @@ describe("insertPendingArtifact (Db-wrapper shape — never throws)", () => {
         title: "T",
       }),
     ).resolves.toBeNull();
+  });
+});
+
+/**
+ * REGRESSION: review RC-02 — the degraded artifact path rendered nothing below
+ * the card and told the user the report was in the answer above.
+ *
+ * `degradedBodyToRender` was correct; `artifactCarrierPayload` returned exactly
+ * `{id, kind, state, artifactId, title}` at all three of its call sites, so the
+ * `markdown` the consumer chain reads was ALWAYS undefined. Every degraded
+ * artifact therefore hit `if (typeof carrier !== "string") return null`, the
+ * body-below block was dead code in production, and the card fell to its
+ * "…in the answer above." sub-line — which the system prompt actively
+ * contradicts: the model is told to pass the complete report body to
+ * `create_pdf_report` and then "simply continue to your final answer", and the
+ * loop only overwrites a report body shorter than 200 characters. A 6,000-char
+ * report with a 600-char answer degraded to no PDF, no report, and confident
+ * copy.
+ *
+ * These assertions are about the PRODUCER, which is where the fix belongs. The
+ * consumer half already had a passing suite — that is precisely why the gap
+ * survived a full review round.
+ */
+describe("artifactCarrierPayload — the degraded carrier carries the report (RC-02)", () => {
+  const ID = "11111111-1111-1111-1111-111111111111";
+  const BODY = "# Full report\n\nMuch longer than the closing answer.";
+
+  it("attaches the body on a degraded carrier", () => {
+    const parsed = JSON.parse(
+      artifactCarrierPayload(ID, "T", "degraded", BODY),
+    ) as Record<string, unknown>;
+    expect(parsed.markdown).toBe(BODY);
+    // …and the read guard passes it through, so a body actually renders.
+    expect(parseArtifactCarrier(parsed)?.markdown).toBe(BODY);
+  });
+
+  it("omits the body on pending and ready carriers even when one is supplied", () => {
+    for (const state of ["pending", "ready"] as const) {
+      const parsed = JSON.parse(
+        artifactCarrierPayload(ID, "T", state, BODY),
+      ) as Record<string, unknown>;
+      expect(parsed.markdown, `state=${state}`).toBeUndefined();
+      expect("markdown" in parsed, `state=${state}`).toBe(false);
+    }
+  });
+
+  it("omits the key entirely rather than emitting null/empty when no body exists", () => {
+    for (const markdown of [undefined, ""]) {
+      const parsed = JSON.parse(
+        artifactCarrierPayload(ID, "T", "degraded", markdown),
+      ) as Record<string, unknown>;
+      expect("markdown" in parsed, `markdown=${JSON.stringify(markdown)}`).toBe(
+        false,
+      );
+    }
+  });
+
+  it("keeps the pre-RC-02 five keys byte-identical when no body is attached", () => {
+    // The pending insert and the ready settle must not change shape at all.
+    expect(artifactCarrierPayload(ID, "T", "pending")).toBe(
+      JSON.stringify({
+        id: `artifact-${ID}`,
+        kind: "artifact",
+        state: "pending",
+        artifactId: ID,
+        title: "T",
+      }),
+    );
+  });
+
+  it("caps the body so one messages row cannot carry an unbounded report", () => {
+    const huge = "x".repeat(DEGRADED_CARRIER_MARKDOWN_CAP + 500);
+    const parsed = JSON.parse(
+      artifactCarrierPayload(ID, "T", "degraded", huge),
+    ) as { markdown: string };
+    expect(parsed.markdown).toHaveLength(DEGRADED_CARRIER_MARKDOWN_CAP);
+  });
+
+  it("EC-06 stays closed: a body trim-equal to the answer still renders nothing below", () => {
+    const answer = "The report and the answer are the same text.";
+    const parsed = JSON.parse(
+      artifactCarrierPayload(ID, "T", "degraded", `\n  ${answer}  \n`),
+    ) as { markdown: string };
+    expect(
+      degradedBodyToRender({
+        carrierMarkdown: parsed.markdown,
+        answerContent: answer,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("every producer call site passes the body where one exists (RC-02)", () => {
+  const DB_SRC = readFileSync(
+    new URL("../lib/artifacts/db.ts", import.meta.url),
+    "utf8",
+  );
+  const ROUTE_SRC = readFileSync(
+    new URL("../app/api/agent/run/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  it("the settle write passes job.markdown", () => {
+    expect(DB_SRC).toMatch(
+      /artifactCarrierPayload\(\s*job\.artifactId,\s*job\.title,\s*state === "succeeded" \? "ready" : "degraded",\s*job\.markdown,/,
+    );
+  });
+
+  it("the route's degraded fallback passes q.markdown", () => {
+    // The unexpected-throw path in the deferred-render task: the settle never
+    // ran, so this row is the user's only remaining route to the report.
+    expect(ROUTE_SRC).toMatch(
+      /artifactCarrierPayload\(\s*artifactId,\s*q\.title,\s*"degraded",\s*q\.markdown,/,
+    );
+  });
+
+  it("the route's PENDING insert deliberately passes no body", () => {
+    expect(ROUTE_SRC).toMatch(
+      /artifactCarrierPayload\(artifactId, q\.title, "pending"\)/,
+    );
+  });
+
+  it("has exactly three producer call sites, so a fourth cannot be added unnoticed", () => {
+    const sites = [
+      ...(DB_SRC.match(/artifactCarrierPayload\(/g) ?? []),
+      ...(ROUTE_SRC.match(/artifactCarrierPayload\(/g) ?? []),
+    ];
+    // db.ts: the declaration + the settle write. route.ts: pending + degraded.
+    expect(sites).toHaveLength(4);
   });
 });
