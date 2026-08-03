@@ -3,6 +3,7 @@ import {
   runAgentLoop,
   INCOMPLETE_COPY,
   CONTEXT_TOO_LONG_COPY,
+  TRUNCATED_STOP_REASONS,
   type AgentTools,
   type ChatMessage,
   type ModelChunk,
@@ -403,6 +404,50 @@ describe("clean-finish guard (AI-SPEC New Risk #1 / EV-11)", () => {
     await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
 
     expect(db.calls.updateMessageContent.at(-1)!.content).toBe("Clean answer.");
+  });
+
+  // GW-03. WR-03 made the finish reason arrive on EVERY turn of the providers
+  // that omit usage — the free OpenRouter ids that are this project's demo
+  // default. Under the old 5-entry allow-list, one clean-but-unlisted spelling
+  // therefore stamped a false "may be incomplete" note on every single answer.
+  // These four are the plausible spellings; `MAX_TOKENS` is here deliberately as
+  // an upper-case variant that must NOT be matched (see TRUNCATED_STOP_REASONS).
+  it.each(["eos", "COMPLETE", "end_of_turn", "MAX_TOKENS"])(
+    "appends NO note for the unrecognised-but-clean stopReason %s",
+    async (reason) => {
+      const db = fakeDb();
+      const model = scriptedModel([
+        { deltas: ["Clean answer."], usage: USAGE, stopReason: reason },
+      ]);
+      await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+      expect(db.calls.updateMessageContent.at(-1)!.content).toBe("Clean answer.");
+    },
+  );
+
+  it.each(["content_filter", "error"])(
+    "appends the locked INCOMPLETE_COPY note for the non-length truncation reason %s",
+    async (reason) => {
+      const db = fakeDb();
+      const model = scriptedModel([
+        { deltas: ["A cut-off answ"], usage: USAGE, stopReason: reason },
+      ]);
+      await runAgentLoop(baseParams(() => {}, db, model, fakeTools()));
+
+      const last = db.calls.updateMessageContent.at(-1)!;
+      expect(last.content).toContain("A cut-off answ");
+      expect(last.content.endsWith(INCOMPLETE_COPY)).toBe(true);
+    },
+  );
+
+  it("holds exactly the five truncation spellings in TRUNCATED_STOP_REASONS", () => {
+    expect([...TRUNCATED_STOP_REASONS].sort()).toEqual([
+      "content_filter",
+      "error",
+      "length",
+      "max_tokens",
+      "model_context_window_exceeded",
+    ]);
   });
 
   it("routes model_context_window_exceeded to CONTEXT_TOO_LONG_COPY instead of the generic note", async () => {
