@@ -1029,7 +1029,13 @@ describe("WR-04: the terminal write always lands and the loop never rejects out 
       runAgentLoop(baseParams(s.send, db, model, fakeTools())),
     ).resolves.toBeUndefined();
 
-    expect(db.calls.setRunStatus).toHaveLength(1);
+    // Was 1 before 03-14. The run-status step — and ONLY that step — now gets
+    // one bounded re-attempt (GW-01), so a setRunStatus that rejects on every
+    // call is seen exactly twice. The assertion this test exists for is the
+    // `.resolves` above; the count is tightened, not relaxed: still an exact
+    // number, still every call terminal, and still no third attempt.
+    expect(db.calls.setRunStatus).toHaveLength(2);
+    expect(db.calls.setRunStatus.every((c) => c.status === "failed")).toBe(true);
     errSpy.mockRestore();
   });
 

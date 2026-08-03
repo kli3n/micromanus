@@ -495,21 +495,34 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
       const u = usage ?? ZERO_USAGE;
       const prices = pricesFor(modelId);
       const cost = costUsd(u, prices);
-      await db.insertUsageEvent({
-        run_id: runId,
-        chat_id: chatId,
-        user_id: userId,
-        model_id: modelId,
-        input_tokens: u.inputTokens,
-        output_tokens: u.outputTokens,
-        cache_read_tokens: u.cacheReadTokens,
-        cache_write_tokens: u.cacheWriteTokens,
-        input_price_per_1m: prices.inputPer1M,
-        output_price_per_1m: prices.outputPer1M,
-        cache_read_price_per_1m: prices.cacheReadPer1M,
-        cache_write_price_per_1m: prices.cacheWritePer1M,
-        cost_usd: cost,
-      });
+      // Guarded exactly like the setRunIterations write above (GW-01): 03-14
+      // made this write THROWABLE so a refused insert stops being invisible —
+      // but a metering blip must not convert an otherwise-good paid run into
+      // status='failed'. Visibility and survivability are different
+      // requirements. The send("usage", …) frame below stays gated on `usage`
+      // being present, exactly as before.
+      try {
+        await db.insertUsageEvent({
+          run_id: runId,
+          chat_id: chatId,
+          user_id: userId,
+          model_id: modelId,
+          input_tokens: u.inputTokens,
+          output_tokens: u.outputTokens,
+          cache_read_tokens: u.cacheReadTokens,
+          cache_write_tokens: u.cacheWriteTokens,
+          input_price_per_1m: prices.inputPer1M,
+          output_price_per_1m: prices.outputPer1M,
+          cache_read_price_per_1m: prices.cacheReadPer1M,
+          cache_write_price_per_1m: prices.cacheWritePer1M,
+          cost_usd: cost,
+        });
+      } catch (err) {
+        console.error(
+          `[agent/run] run=${runId} iter=${iterations} insertUsageEvent failed:`,
+          err instanceof Error ? err.name : "error",
+        );
+      }
       if (usage) {
         send("usage", {
           inputTokens: u.inputTokens,
@@ -610,14 +623,18 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
     const terminalStep = async (
       label: string,
       run: () => Promise<void>,
+      attempts = 1,
     ): Promise<void> => {
-      try {
-        await run();
-      } catch (stepErr) {
-        console.error(
-          `[agent/run] run=${runId} iter=${iterations} terminal step "${label}" failed:`,
-          stepErr instanceof Error ? stepErr.name : "error",
-        );
+      for (let i = 0; i < attempts; i++) {
+        try {
+          await run();
+          return;
+        } catch (stepErr) {
+          console.error(
+            `[agent/run] run=${runId} iter=${iterations} terminal step "${label}" failed:`,
+            stepErr instanceof Error ? stepErr.name : "error",
+          );
+        }
       }
     };
     // Refund ONLY when the very first model call never completed (disconnect is
@@ -635,9 +652,17 @@ export async function runAgentLoop(params: RunAgentLoopParams): Promise<void> {
       db.updateMessageContent(assistantMsgId, mapped.message),
     );
     // LAST and UNCONDITIONAL — the only signal every client uses to stop
-    // waiting. Nothing above may prevent it from being attempted.
-    await terminalStep("run status", () =>
-      db.setRunStatus(runId, "failed", iterations),
+    // waiting. Nothing above may prevent it from being attempted, and it is the
+    // ONE step that gets a second attempt (GW-01): every other step's failure
+    // costs a refund, a settled meter or a copy line, but this one's failure
+    // wedges the chat at status='running' forever, on this tab and on every
+    // future reopen. Two attempts, immediate, no timer — a setTimeout inside a
+    // waitUntil task after the stream has closed is a new liveness risk for no
+    // gain, and one immediate re-attempt is what the review asked for.
+    await terminalStep(
+      "run status",
+      () => db.setRunStatus(runId, "failed", iterations),
+      2,
     );
     // Saturation fallback: on a provider 429, surface the next free OpenRouter
     // model(s) so the client can re-run the same question elsewhere. The payload
