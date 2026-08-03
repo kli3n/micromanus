@@ -62,6 +62,7 @@ function textPart(content: string, finish?: string): StreamPart {
 function makeModel(
   parts: StreamPart[],
   provider?: Provider,
+  contextTokens?: number | null,
 ): { model: Model; captured: { request?: CapturedRequest } } {
   const captured: { request?: CapturedRequest } = {};
   const client = {
@@ -84,6 +85,7 @@ function makeModel(
     baseURL: "https://openrouter.ai/api/v1",
     modelId: "inclusionai/ling-3.0-flash:free",
     ...(provider ? { provider } : {}),
+    ...(contextTokens !== undefined ? { contextTokens } : {}),
     _clientFactory: () => client,
   });
   return { model, captured };
@@ -178,8 +180,12 @@ describe("createOpenAiCompatModel — finish reason delivery (WR-03)", () => {
 });
 
 describe("createOpenAiCompatModel — explicit completion cap (WR-03)", () => {
+  // GW-04: each cap test now STATES the precondition that justifies its cap —
+  // a recorded 200_000-token window, whose quarter (50_000) clamps to
+  // MAX_COMPLETION_TOKENS. The expectations are unchanged; only the input that
+  // makes them true is now explicit instead of assumed.
   it("sends the cap as max_tokens for a non-openai provider", async () => {
-    const { model, captured } = makeModel([textPart("hi", "stop")], "openrouter");
+    const { model, captured } = makeModel([textPart("hi", "stop")], "openrouter", 200_000);
     await collect(model, CONVO);
     const req = captured.request!;
     // Literal AND constant: the literal keeps this from passing vacuously if the
@@ -190,7 +196,7 @@ describe("createOpenAiCompatModel — explicit completion cap (WR-03)", () => {
   });
 
   it("sends the cap as max_completion_tokens for provider 'openai', and NOT max_tokens", async () => {
-    const { model, captured } = makeModel([textPart("hi", "stop")], "openai");
+    const { model, captured } = makeModel([textPart("hi", "stop")], "openai", 200_000);
     await collect(model, CONVO);
     const req = captured.request!;
     expect(req.max_completion_tokens).toBe(16_384);
@@ -201,5 +207,63 @@ describe("createOpenAiCompatModel — explicit completion cap (WR-03)", () => {
   it("pins the openai-compat cap strictly equal to MAX_TOKENS from the anthropic wrapper (no drift)", () => {
     expect(MAX_COMPLETION_TOKENS).toBe(MAX_TOKENS);
     expect(MAX_COMPLETION_TOKENS).toBe(16_384);
+  });
+});
+
+/**
+ * GW-04. WR-03 began sending an unconditional 16_384-token reservation on a
+ * path that previously sent none. TEN of the registry's sixteen entries record
+ * `contextTokens: null` — the six free OpenRouter ids AND the four paid OpenAI
+ * ids — and the loop feeds back page extracts capped at 20_000 characters each,
+ * so by iteration 3-4 `prompt + max_tokens > context` is a real, billed 400 that
+ * the app's own reservation caused. These tests pin that an unknown window means
+ * no cap at all.
+ */
+describe("createOpenAiCompatModel — the cap is DERIVED from the context window (GW-04)", () => {
+  it.each([
+    ["null (the ten unknown-window registry entries)", null as number | null],
+    ["absent", undefined],
+  ])("sends NEITHER cap key when contextTokens is %s", async (_label, ctx) => {
+    const { model, captured } = makeModel([textPart("hi", "stop")], "openrouter", ctx);
+    await collect(model, CONVO);
+    const req = captured.request!;
+    expect("max_tokens" in req).toBe(false);
+    expect("max_completion_tokens" in req).toBe(false);
+  });
+
+  it("sends no cap key for provider 'openai' either when the window is unknown", async () => {
+    // The paid OpenAI ids record contextTokens: null too — the blast radius is
+    // ten entries, not the six OpenRouter ones.
+    const { model, captured } = makeModel([textPart("hi", "stop")], "openai", null);
+    await collect(model, CONVO);
+    const req = captured.request!;
+    expect("max_completion_tokens" in req).toBe(false);
+    expect("max_tokens" in req).toBe(false);
+  });
+
+  it("reserves a QUARTER of a small recorded window rather than the flat maximum", async () => {
+    const { model, captured } = makeModel([textPart("hi", "stop")], "openrouter", 32_000);
+    await collect(model, CONVO);
+    expect(captured.request!.max_tokens).toBe(8_000);
+  });
+
+  it.each([
+    ["1M (kimi-k3)", 1_000_000],
+    ["256K (kimi-k2.6 / k2.7-code)", 256_000],
+  ])("still clamps a %s window to MAX_COMPLETION_TOKENS", async (_label, ctx) => {
+    const { model, captured } = makeModel([textPart("hi", "stop")], "kimi", ctx);
+    await collect(model, CONVO);
+    expect(captured.request!.max_tokens).toBe(MAX_COMPLETION_TOKENS);
+  });
+
+  it.each([
+    ["zero", 0],
+    ["negative", -1],
+  ])("treats a %s window as unknown, never as a zero reservation", async (_label, ctx) => {
+    const { model, captured } = makeModel([textPart("hi", "stop")], "openrouter", ctx);
+    await collect(model, CONVO);
+    const req = captured.request!;
+    expect("max_tokens" in req).toBe(false);
+    expect("max_completion_tokens" in req).toBe(false);
   });
 });
