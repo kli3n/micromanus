@@ -2,7 +2,8 @@
 node_modules/
 .pnp
 .pnp.*
-docs/
+docs/*
+!docs/adr/
 # next.js
 .next/
 /out/
