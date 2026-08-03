@@ -33,6 +33,11 @@ import {
   type ArtifactCarrier,
 } from "@/components/chat/ArtifactCard";
 import { ExportPdfButton } from "@/components/chat/ExportPdfButton";
+import {
+  KNOWN_TOOL_NAMES,
+  degradedBodyToRender,
+  toolLineParts,
+} from "@/components/chat/render-rules";
 
 /**
  * ChatThread (CHAT-01/02/03/05/07/08, PAY-04/05) — the "use client" streaming
@@ -193,6 +198,13 @@ export interface ToolStatusEntry {
   // --- kind "artifact" (03-05 carrier contract, validated on read) ---
   artifactId?: string; // kind "artifact": artifacts row id for the download route
   markdown?: string; // kind "artifact", forward-compat: degraded report body
+  // The loop emits these on create_pdf_report rows, so the interface should not
+  // silently omit them — but the client DERIVES its own copy from tool + state
+  // and never reads them (T-03-15-05: a persisted row is untrusted, and the
+  // running payload's meta contradicts the UI-SPEC contract today). Present for
+  // forward-compatibility only; see components/chat/render-rules.ts.
+  label?: string;
+  meta?: string;
 }
 
 /**
@@ -231,7 +243,13 @@ function deriveRunSurfaces(
 ): RunSurfaces {
   const plan = tools.find((t) => t.kind === "plan") ?? null;
   const meter = tools.find((t) => t.kind === "meter") ?? null;
-  const lines = tools.filter((t) => t.kind == null);
+  // EC-08's single gate: a row without a `kind` is a tool line, but only a tool
+  // this deploy can NAME may reach the renderer — otherwise it paints an
+  // unnamed "Tool · done". Same D-52 graceful-absence convention already
+  // applied to unknown `kind` values.
+  const lines = tools.filter(
+    (t) => t.kind == null && KNOWN_TOOL_NAMES.has(t.tool),
+  );
 
   // Artifact carrier (RSCH-03, D-46): validated defensively on read — rows
   // from any deploy vintage are untrusted (T-3-60), so an unknown state or a
@@ -310,33 +328,6 @@ const markdownComponents: Components = {
     </div>
   ),
 };
-
-function toolLineParts(t: ToolStatusEntry): { label: string; text: string; meta: string } {
-  const running = t.state !== "done";
-  if (t.tool === "web_search") {
-    return {
-      label: running ? "Searching the web" : "Searched the web",
-      text: t.query ? ` · "${t.query}"` : "",
-      meta: t.note
-        ? t.note
-        : running
-          ? "searching…"
-          : `SerpAPI · ${t.resultCount ?? 0} results`,
-    };
-  }
-  if (t.tool === "fetch_page") {
-    return {
-      label: running ? "Reading page" : "Read page",
-      text: running ? (t.url ? ` · ${t.url}` : "") : t.domain ? ` · ${t.domain}` : "",
-      meta: t.note
-        ? t.note
-        : running
-          ? "fetching…"
-          : `${(t.tokensApprox ?? 0).toLocaleString()} tok`,
-    };
-  }
-  return { label: "Tool", text: "", meta: running ? "…" : "done" };
-}
 
 function ToolStatusLine({ t }: { t: ToolStatusEntry }) {
   const running = t.state !== "done";
@@ -1193,6 +1184,18 @@ export function ChatThread({
                   elapsedMs={meter.elapsedMs}
                 />
               ) : null;
+            // EC-06: ONE decision drives both the body beneath the degraded
+            // card and the card's own sub-line, so the copy can never claim the
+            // report is below when nothing is. Null means the answer bubble
+            // above already carries that exact text — never that the user lost
+            // the report (D-43's substantive guarantee is preserved).
+            const degradedBody =
+              artifact?.state === "degraded"
+                ? degradedBodyToRender({
+                    carrierMarkdown: artifact.markdown,
+                    answerContent: m.content,
+                  })
+                : null;
             return (
               <div
                 key={m.id}
@@ -1311,30 +1314,33 @@ export function ChatThread({
                         artifactId={artifact.artifactId}
                         title={artifact.title}
                         state={artifact.state}
+                        bodyBelow={degradedBody !== null}
                       />
                     )}
                     {/* [7] Degraded report body (RSCH-04, D-43) — the user
-                        always gets the content: the report markdown in a
-                        standard assistant bubble beneath the card. Source:
-                        carrier markdown when present (forward-compat), else
-                        the terminal answer — the report body IS the answer
-                        in the fallback path (03-05 weak-markdown guarantee). */}
-                    {artifact?.state === "degraded" &&
-                      (artifact.markdown ?? m.content).length > 0 && (
-                        <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[14px]">
-                          <div className="chat-markdown">
-                            <ReactMarkdown
-                              remarkPlugins={[
-                                remarkGfm,
-                                remarkCitations(registry),
-                              ]}
-                              components={markdownComponents}
-                            >
-                              {artifact.markdown ?? m.content}
-                            </ReactMarkdown>
-                          </div>
+                        always gets the content, and now EXACTLY ONCE (EC-06).
+                        The pre-fix fallback to `m.content` re-rendered the
+                        answer bubble's own text a second time beneath the card
+                        whenever the carrier had no markdown of its own. The
+                        rule returns null in precisely the cases the bubble
+                        above already carries the text, and the card's sub-line
+                        branches on the SAME value so the copy cannot claim the
+                        report is somewhere it is not. */}
+                    {artifact?.state === "degraded" && degradedBody !== null && (
+                      <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[14px]">
+                        <div className="chat-markdown">
+                          <ReactMarkdown
+                            remarkPlugins={[
+                              remarkGfm,
+                              remarkCitations(registry),
+                            ]}
+                            components={markdownComponents}
+                          >
+                            {degradedBody}
+                          </ReactMarkdown>
                         </div>
-                      )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

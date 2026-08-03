@@ -14,9 +14,15 @@ import { useReducedMotion } from "@/components/hooks/useReducedMotion";
  *   pending  — title {title} · "Preparing PDF…" · spinner in the accent tile
  *   ready    — title {title}.pdf · "PDF · generated from this research" ·
  *              "Download" primary button (34px)
- *   degraded — 🔒 "PDF unavailable" · "The renderer failed — the full report
- *              is below." · WARNING family, never error red (a failed PDF is
- *              a graceful degrade with the report intact, D-43)
+ *   degraded — 🔒 "PDF unavailable" · sub-line branches on `bodyBelow`: the
+ *              "…report is below." variant when a body renders beneath the
+ *              card, the "…in the answer above." variant when the streamed
+ *              answer already carries that exact text (EC-06 — the report
+ *              reaches the screen once, never twice). WARNING family,
+ *              never error red (a failed PDF is a graceful degrade with the
+ *              report intact, D-43). The TITLE is the locked string; the
+ *              sub-line is not (03-UI-SPEC Copywriting Contract, re-scoped
+ *              against CONTEXT D-43 + 03-VERIFICATION.md's exact-copy list).
  *
  * Download (D-39): each click fetches a FRESH ~60s signed URL from the
  * ownership-checked route and navigates immediately — the URL is never stored
@@ -124,10 +130,20 @@ export function ArtifactCard({
   artifactId,
   title,
   state,
+  bodyBelow = true,
 }: {
   artifactId: string;
   title: string;
   state: ArtifactState;
+  /**
+   * EC-06. Whether a report body actually renders BENEATH this card — the
+   * caller's `degradedBodyToRender` verdict, passed in rather than guessed, so
+   * the degraded sub-line cannot claim the report is below when nothing is.
+   * False means the streamed answer bubble ABOVE already carries that exact
+   * text (the trim-equal / absent-carrier cases); the user has the content
+   * either way, which is D-43's substantive guarantee.
+   */
+  bodyBelow?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -196,7 +212,9 @@ export function ArtifactCard({
       ? "Preparing PDF…"
       : state === "ready"
         ? "PDF · generated from this research"
-        : "The renderer failed — the full report is below.";
+        : bodyBelow
+          ? "The renderer failed — the full report is below."
+          : "The renderer failed — the full report is in the answer above.";
 
   return (
     <div
