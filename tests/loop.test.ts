@@ -1090,3 +1090,130 @@ describe("WR-04: the terminal write always lands and the loop never rejects out 
     errSpy.mockRestore();
   });
 });
+
+describe("GW-01: the run-status terminal step is retried once, and a metering blip never fails a run", () => {
+  // 03-14 Task 1 made the injected Db actually throw on a Postgres refusal, so
+  // the WR-04 guard above is finally live in production. Two consequences are
+  // pinned here: the run-status write — the ONLY signal every client waits on —
+  // gets one immediate re-attempt, and nothing else does; and a throwing
+  // usage_events insert is logged by name without failing an otherwise-good
+  // paid run (visibility and survivability are different requirements).
+  const RAW_PG_BODY =
+    'POSTGRES_RAW_BODY: permission denied for table runs detail=(user_id)=(u1)';
+
+  /** fakeDb's `rejectOn` throws unconditionally, so a "fails once then works"
+   *  case needs this local wrapper. fakeDb itself is left untouched. */
+  function dbFailingFirstSetRunStatus() {
+    const db = fakeDb();
+    let n = 0;
+    return {
+      ...db,
+      async setRunStatus(runId: string, status: string, iterations?: number) {
+        n += 1;
+        await db.setRunStatus(runId, status, iterations);
+        if (n === 1) {
+          const err = new Error(RAW_PG_BODY);
+          err.name = "Injected_setRunStatus_firstAttempt";
+          throw err;
+        }
+      },
+    };
+  }
+
+  it("re-attempts the run-status write once and stops as soon as it lands", async () => {
+    const s = collectSend();
+    const db = dbFailingFirstSetRunStatus();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    expect(db.calls.setRunStatus).toHaveLength(2);
+    expect(db.calls.setRunStatus.every((c) => c.status === "failed")).toBe(true);
+    // Exactly ONE failure line — the successful second attempt logs nothing.
+    const stepLines = errSpy.mock.calls
+      .map((c) => c.map((a) => (typeof a === "string" ? a : String(a))).join(" "))
+      .filter((l) => l.includes('terminal step "run status" failed'));
+    expect(stepLines).toHaveLength(1);
+    expect(stepLines[0]).toContain("Injected_setRunStatus_firstAttempt");
+    expect(stepLines[0]).not.toContain("POSTGRES_RAW_BODY");
+    errSpy.mockRestore();
+  });
+
+  it("gives up after exactly two attempts and still resolves with error + done(failed)", async () => {
+    const s = collectSend();
+    const db = fakeDb({ setRunStatus: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await expect(
+      runAgentLoop(baseParams(s.send, db, model, fakeTools())),
+    ).resolves.toBeUndefined();
+
+    expect(db.calls.setRunStatus).toHaveLength(2);
+    expect(s.events.some((e) => e.event === "error")).toBe(true);
+    expect(s.events.find((e) => e.event === "done")!.data).toMatchObject({
+      status: "failed",
+    });
+    errSpy.mockRestore();
+  });
+
+  it("does NOT retry the refund step — a throwing refundRun is attempted exactly once", async () => {
+    const s = collectSend();
+    const db = fakeDb({ refundRun: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    expect(db.calls.refundRun).toHaveLength(1);
+    errSpy.mockRestore();
+  });
+
+  it("does NOT retry the terminal content write — a throwing updateMessageContent is attempted once", async () => {
+    const s = collectSend();
+    const db = fakeDb({ updateMessageContent: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    expect(db.calls.updateMessageContent).toHaveLength(1);
+    errSpy.mockRestore();
+  });
+
+  it("does NOT retry the meter settle step — a throwing tool-row update is attempted once", async () => {
+    const s = collectSend();
+    const db = fakeDb({ updateToolMessage: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ throwAt: "before" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    expect(db.calls.updateToolMessage).toHaveLength(1);
+    errSpy.mockRestore();
+  });
+
+  it("a throwing insertUsageEvent is logged by NAME and the run still succeeds", async () => {
+    const s = collectSend();
+    const db = fakeDb({ insertUsageEvent: RAW_PG_BODY });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const model = scriptedModel([{ deltas: ["the answer"], usage: USAGE, stopReason: "stop" }]);
+
+    await runAgentLoop(baseParams(s.send, db, model, fakeTools()));
+
+    expect(s.events.find((e) => e.event === "done")!.data).toMatchObject({
+      runId: "r1",
+      status: "succeeded",
+    });
+    expect(db.calls.setRunStatus.at(-1)).toMatchObject({ status: "succeeded" });
+    // Logged, and by name only.
+    const all = errSpy.mock.calls
+      .map((c) => c.map((a) => (typeof a === "string" ? a : String(a))).join(" "))
+      .join("\n");
+    expect(all).toContain("insertUsageEvent failed");
+    expect(all).toContain("Injected_insertUsageEvent");
+    expect(all).not.toContain("POSTGRES_RAW_BODY");
+    errSpy.mockRestore();
+  });
+});
