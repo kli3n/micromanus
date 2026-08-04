@@ -13,6 +13,7 @@
   --text: #211d18;
   --text-2: #6c6459;
   --text-3: #9c9385;
+  --scrim: rgba(33, 29, 24, 0.44); /* drawer backdrop only (04-06); derived from --text */
 
   /* Accent & semantic */
   --accent: #c2410c;
@@ -59,6 +60,32 @@ body {
   color: var(--text);
   font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* D-70 (Amendment A3): the ONE app-wide focus ring, built from tokens.
+   `outline`, not box-shadow — the ring never participates in layout or
+   paint-area math and composites cleanly, the same property the original
+   rings were chosen for (components/chat/SourcesCard.tsx:163-167 comment).
+   Ring contrast: --accent measures 4.36–5.18:1 on every warm surface it can
+   sit on — over the 3:1 non-text AA bar (04-RESEARCH § Color math).
+   Supersedes the scattered `box-shadow: 0 0 0 3px var(--accent-soft)` rings
+   (--accent-soft is 1.17:1 on --surface — never AA-visible). Three legacy
+   sites remain in the tree and are removed by their owning plans — do NOT
+   reintroduce a per-control ring:
+     - components/chat/SourcesCard.tsx:144 and :173  -> plan 04-11
+     - .stats-summary in app/app/stats/page.tsx STATS_CSS -> plan 04-12
+   Layered under `base` deliberately: Tailwind v4 emits utilities inside
+   @layer utilities, and an UNLAYERED rule here would beat every layered
+   `rounded-*` utility on focus (unlayered author CSS outranks all @layer
+   styles), squaring off e.g. rounded-full controls while focused. In `base`,
+   each control keeps its own border-radius (the outline follows it) and
+   `border-radius: inherit` acts only on elements with no radius of their own. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
 }
 
 /* Credit-badge pulsing dot (D-21). Compositor-only (opacity), disabled under
@@ -235,11 +262,8 @@ body {
   color: var(--accent-hover);
   border-bottom-style: solid;
 }
-.chat-markdown a.cite:focus-visible {
-  outline: none;
-  border-radius: 3px;
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
+/* .cite keyboard focus is the app-wide D-70 :focus-visible ring above —
+   its legacy --accent-soft box-shadow ring was deleted (Amendment A3). */
 
 /* Source row arrived at from a citation click (03-UI-SPEC § [5]) — static
    highlight, deliberately un-animated: nothing to disable under reduced
