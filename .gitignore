@@ -13,6 +13,9 @@ next-env.d.ts
 design/BROWSER-DESIGN.md
 # testing
 /coverage
+# Lighthouse a11y reports (D-69): a report can embed request headers and the
+# audit runs against a signed-in session — evidence to read, never to commit.
+.a11y/
 
 # env files — no secrets in repo; keep only the example
 .env*
