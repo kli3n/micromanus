@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -28,6 +29,11 @@ import {
   deriveRunSurfaces,
   type ToolStatusEntry,
 } from "@/components/chat/derive-run-surfaces";
+import {
+  isReplayEnabled,
+  replayFixture,
+  type ReplayStats,
+} from "@/components/chat/stream-replay";
 
 /**
  * `ToolStatusEntry` MOVED to `components/chat/derive-run-surfaces.ts` with the
@@ -159,6 +165,116 @@ function CheckIcon() {
     </svg>
   );
 }
+
+// ── D-61 paint instrument (04-03 Task 3, RESEARCH Pattern 1c) ────────────────
+//
+// FOUR numbers, and `performance.mark`/`measure` + `PerformanceObserver` as the
+// PRIMARY instrument rather than React's `<Profiler>`. `<Profiler>` reports
+// nothing in a production build unless the bundle is aliased to
+// `react-dom/profiling`, and Next's `reactProductionProfiling` option is
+// unconfirmed on 16.2.10 (this repo sets no such flag). The Performance API
+// behaves identically in dev and prod, needs no config, and depends on no React
+// internals — so the measurement does not rest on an unverified build option.
+//
+// EVERYTHING BELOW IS INERT UNLESS ARMED. `instrumentRef` stays null unless BOTH
+// replay gates passed, so the production path pays one null check per commit and
+// per delta: no counters tick, no observer attaches, no marks are emitted.
+
+const PAINT_START = "mm-paint-start";
+const PAINT_END = "mm-paint-end";
+const PAINT_MEASURE = "mm-paint";
+
+interface PaintInstrument {
+  deltas: number;
+  commits: number;
+  /** One entry per measured commit, in arrival order — the final third is taken
+   *  from the END of this list, which is why order must not be disturbed. */
+  durations: number[];
+  longTaskMs: number;
+  longTasks: number;
+  markPending: boolean;
+}
+
+function newInstrument(): PaintInstrument {
+  return {
+    deltas: 0,
+    commits: 0,
+    durations: [],
+    longTaskMs: 0,
+    longTasks: 0,
+    markPending: false,
+  };
+}
+
+function resetInstrument(inst: PaintInstrument): void {
+  inst.deltas = 0;
+  inst.commits = 0;
+  inst.durations.length = 0;
+  inst.longTaskMs = 0;
+  inst.longTasks = 0;
+  inst.markPending = false;
+}
+
+/** Nearest-rank percentile over an ASCENDING-sorted array. */
+function percentileMs(sortedAsc: number[], p: number): number {
+  if (sortedAsc.length === 0) return 0;
+  const idx = Math.min(
+    sortedAsc.length - 1,
+    Math.max(0, Math.ceil((p / 100) * sortedAsc.length) - 1),
+  );
+  return sortedAsc[idx] as number;
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * The recorded baseline. Median and p95 are taken over the FINAL THIRD of the
+ * commits, because that is the window the locked D-61 threshold names (median
+ * commit > 16 ms during the final third of a long streamed answer) — and it is
+ * the honest window, since cost 5 (a full re-parse of the whole document per
+ * render) grows with the answer, so early commits are cheap for a reason that
+ * disappears by the end.
+ */
+function summarizeReplay(inst: PaintInstrument, stats: ReplayStats) {
+  const all = inst.durations;
+  const finalThird = all
+    .slice(Math.floor((all.length * 2) / 3))
+    .slice()
+    .sort((a, b) => a - b);
+  return {
+    label: "BEFORE",
+    fixture: stats.fixtureName,
+    fixtureChars: stats.fixtureChars,
+    targetDeltasPerSecond: stats.targetDeltasPerSecond,
+    chunkChars: stats.chunkChars,
+    deltas: inst.deltas,
+    deltasPerSecond: round2(stats.deltasPerSecond),
+    commits: inst.commits,
+    deltasPerCommit: round2(inst.deltas / Math.max(1, inst.commits)),
+    paintSamples: all.length,
+    finalThirdSamples: finalThird.length,
+    medianCommitMs: round2(percentileMs(finalThird, 50)),
+    p95CommitMs: round2(percentileMs(finalThird, 95)),
+    longTaskMs: round2(inst.longTaskMs),
+    longTasks: inst.longTasks,
+    elapsedMs: Math.round(stats.elapsedMs),
+  };
+}
+
+/**
+ * `useLayoutEffect` on the client, `useEffect` on the server — the standard
+ * isomorphic form, selected ONCE at module scope so the hook count and order are
+ * identical in both branches (this is not a conditional hook). React logs a
+ * development warning when a component that calls `useLayoutEffect` is
+ * server-rendered, and every client component in the App Router is
+ * server-rendered.
+ *
+ * The measurement needs the LAYOUT phase specifically: `useEffect` fires after
+ * the browser has painted, so a measure ending there would fold paint time in
+ * and stop being the "commit duration" the D-61 threshold is written against.
+ */
+const useCommitEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
  * GFM tables render inside an overflow-x wrapper so wide research tables
@@ -453,6 +569,126 @@ export function ChatThread({
     setBalance(initialBalance);
   }, [initialBalance]);
 
+  // ── D-61 measurement wiring (04-03 Task 3) ─────────────────────────────────
+  //
+  // `instrumentRef` is the arm/disarm switch for every counter, mark and
+  // observer in this file. Null is the only state a production bundle can reach.
+  const instrumentRef = useRef<PaintInstrument | null>(null);
+
+  /**
+   * React commit counter + the paint measure. NO dependency array on purpose:
+   * this must run after EVERY commit, which is exactly what makes `commits` the
+   * real number and `deltas / commits` the batching win measured directly rather
+   * than inferred.
+   *
+   * When unarmed it is a single null check and an early return — that is the
+   * whole cost the production path pays for this instrument existing.
+   */
+  useCommitEffect(() => {
+    const inst = instrumentRef.current;
+    if (!inst) return;
+    inst.commits += 1;
+    if (!inst.markPending) return;
+    inst.markPending = false;
+    try {
+      performance.mark(PAINT_END);
+      const entry = performance.measure(PAINT_MEASURE, PAINT_START, PAINT_END);
+      inst.durations.push(entry.duration);
+    } catch {
+      // A missing start mark means the buffer was cleared underneath us. A lost
+      // sample is not worth throwing inside a layout effect.
+    }
+    performance.clearMarks(PAINT_START);
+    performance.clearMarks(PAINT_END);
+    performance.clearMeasures(PAINT_MEASURE);
+  });
+
+  /**
+   * Arm the harness — BOTH gates, checked by `isReplayEnabled` so no caller can
+   * satisfy one and forget the other: `NODE_ENV !== "production"` (inlined at
+   * build time, so a production bundle returns false and everything here is
+   * unreachable) AND `?mmReplay=1` on the URL.
+   *
+   * The query flag is read HERE, in an effect, rather than during render: a
+   * render-time environment read is the WR-09 hydration trap, and post-hydration
+   * is early enough for a harness that a human triggers.
+   *
+   * The trigger is `window.__mmReplay()` rather than a dev-only button on
+   * purpose — the plan's contract is that this task changes NO rendered
+   * behaviour, and a console/CDP-callable function changes none even with the
+   * gates on. It also makes the measurement scriptable.
+   */
+  useEffect(() => {
+    if (!isReplayEnabled(window.location.search)) return;
+    const inst = newInstrument();
+    instrumentRef.current = inst;
+
+    // Total long-task milliseconds — the honest does-it-feel-janky proxy. A
+    // 16 ms median with three 300 ms stalls still reads as broken, and no
+    // median can tell you that happened.
+    let observer: PerformanceObserver | null = null;
+    try {
+      observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          inst.longTaskMs += entry.duration;
+          inst.longTasks += 1;
+        }
+      });
+      observer.observe({ type: "longtask", buffered: true });
+    } catch {
+      observer = null; // longtask is Chromium-only; the other three still work
+    }
+
+    const w = window as unknown as {
+      __mmReplay?: () => Promise<unknown>;
+      __mmReplayResult?: unknown;
+    };
+
+    w.__mmReplay = async () => {
+      resetInstrument(inst);
+      // A local-only assistant row: never persisted, never sent anywhere. It
+      // exists so the fixture paints through the real streaming render.
+      const replayId = `replay-a-${Date.now()}`;
+      setMessages((prev) => [
+        ...prev,
+        { id: replayId, role: "assistant", content: "" },
+      ]);
+      // `streamingId` is render-only state — the run-in-flight money gate reads
+      // `streamingRef` / `pendingRef` / `pendingAssistantId`, and this harness
+      // deliberately touches NONE of them. So the row renders in its real
+      // streaming form (terminal === false) while the harness stays incapable of
+      // influencing whether a real run may start.
+      setStreamingId(replayId);
+      const stats = await replayFixture((delta) =>
+        // The SAME `token`-case path a real SSE frame takes, frame text and all
+        // — including the JSON parse, which a real delta also pays. Measuring a
+        // shortcut would measure a pipeline that does not exist.
+        handleFrame(`event: token\ndata: ${JSON.stringify({ delta })}`, replayId),
+      );
+      setStreamingId(null);
+      // PerformanceObserver callbacks are async, so trailing long-task entries
+      // can still be in flight when the last delta lands. Let them arrive.
+      await new Promise((r) => setTimeout(r, 300));
+      const report = summarizeReplay(inst, stats);
+      w.__mmReplayResult = report;
+      console.info("[d61-baseline]", report);
+      return report;
+    };
+
+    return () => {
+      observer?.disconnect();
+      instrumentRef.current = null;
+      delete w.__mmReplay;
+    };
+    // `handleFrame` is deliberately omitted. Only its `token` case is exercised
+    // here, and that case reaches state solely through `setMessages` (a stable
+    // setter) — so a closure captured at mount behaves identically to a fresh
+    // one, while re-arming on every render would detach and reattach the
+    // long-task observer mid-measurement and corrupt the very numbers this
+    // effect exists to collect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, []);
@@ -662,7 +898,24 @@ export function ChatThread({
         }
         break;
       }
-      case "token":
+      case "token": {
+        // D-61 instrument (04-03): count the delta and mark the START of the
+        // paint it triggers. This is the number that decides whether rung 2 can
+        // help AT ALL — React 19 already batches the multiple patchMessage calls
+        // dispatched from one reader resumption, so rAF's incremental win is
+        // bounded by deltas-per-second divided by 60.
+        //
+        // The mark is taken on the FIRST delta of a burst, not each one: a burst
+        // flushed inside one task produces ONE commit, and the honest span is
+        // task-start to paint. Unarmed, this is one null check.
+        const inst = instrumentRef.current;
+        if (inst) {
+          inst.deltas += 1;
+          if (!inst.markPending) {
+            performance.mark(PAINT_START);
+            inst.markPending = true;
+          }
+        }
         // Live-connection streaming UX. If the stream later dies without a
         // terminal event, handleStreamDrop swaps this half-painted text for
         // the placeholder — partial text never survives a disconnection.
@@ -671,6 +924,7 @@ export function ChatThread({
           content: m.content + ((data.delta as string) ?? ""),
         }));
         break;
+      }
       case "tool_status": {
         // Payloads with a `kind` discriminator (plan / meter / artifact —
         // 03-03/03-05 contracts) flow into the same per-message list;
