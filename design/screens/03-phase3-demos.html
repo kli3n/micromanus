@@ -1,0 +1,723 @@
+<!-- @dsCard group="Screens" -->
+<!--
+  MicroManus — Phase 3 UI Demos (Deep Research)
+  Contract: .planning/phases/03-deep-research/03-UI-SPEC.md
+  Surfaces: research-plan card, inline citations, Sources / "Also found",
+            PDF artifact card (pending / ready / degraded), run meter, cache savings.
+  Tokens are copied verbatim from design/foundations.html — no new tokens this phase.
+-->
+<title>MicroManus — Phase 3 UI Demos</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#FBF9F6; --surface:#FFFFFF; --surface-2:#F4F1EC; --surface-3:#EFEBE3;
+    --border:#E9E4DB; --border-strong:#DDD6CA;
+    --text:#211D18; --text-2:#6C6459; --text-3:#9C9385;
+    --accent:#C2410C; --accent-hover:#9A3210; --accent-soft:#FBEAE0; --accent-line:#F1D3C4;
+    --success:#3B7A4B; --success-soft:#E8F1EA; --success-border:#CBE2D2;
+    --error:#B4302A; --error-soft:#FCEDEA; --error-border:#F1C9C2;
+    --warning:#C77D0E; --warning-soft:#FBF0DC; --warning-border:#EBD3A3;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:12px; --radius-sm:8px; --radius-lg:18px;
+    --shadow-sm:0 1px 2px rgba(60,45,30,.06);
+    --shadow:0 6px 22px rgba(60,45,30,.10);
+    --chrome:#1C1A17; --chrome-2:#2A2621; --chrome-line:#3A342C; --chrome-text:#EDE7DC; --chrome-dim:#9C9385;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:var(--sans);color:var(--text);background:var(--chrome);-webkit-font-smoothing:antialiased}
+  button{font-family:inherit}
+
+  /* ============ DEMO CHROME ============ */
+  .demo{display:flex;flex-direction:column;height:100vh}
+  .demobar{background:var(--chrome);border-bottom:1px solid var(--chrome-line);color:var(--chrome-text);
+    display:flex;align-items:center;gap:16px;padding:0 18px;min-height:56px;flex:0 0 auto;flex-wrap:wrap}
+  .demobar .dt{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:650;letter-spacing:-.01em;padding-right:6px}
+  .demobar .dt .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(194,65,12,.25)}
+  .demobar .dt small{color:var(--chrome-dim);font-weight:500;font-size:11.5px}
+  .tabs{display:flex;gap:4px;flex-wrap:wrap}
+  .tab{appearance:none;border:1px solid transparent;background:transparent;color:var(--chrome-dim);
+    font-size:12.5px;font-weight:600;height:34px;padding:0 13px;border-radius:8px;cursor:pointer;
+    display:flex;align-items:center;gap:7px;transition:background .15s,color .15s}
+  .tab:hover{background:var(--chrome-2);color:var(--chrome-text)}
+  .tab[aria-selected="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tab .n{font-family:var(--mono);font-size:10.5px;opacity:.7}
+  .demobar .hint{margin-left:auto;font-size:11.5px;color:var(--chrome-dim)}
+  .demobar .hint code{font-family:var(--mono);font-size:10.5px;background:var(--chrome-2);border:1px solid var(--chrome-line);
+    border-radius:5px;padding:2px 6px;color:var(--chrome-text)}
+
+  .stage{flex:1;min-height:0;overflow:auto;padding:20px;display:grid;place-items:start center;
+    background:radial-gradient(1100px 500px at 50% -10%, #26221D 0%, rgba(38,34,29,0) 60%), var(--chrome)}
+  .frame{width:100%;max-width:1160px;height:760px;background:var(--bg);border-radius:14px;overflow:hidden;
+    border:1px solid var(--chrome-line);box-shadow:0 30px 80px rgba(0,0,0,.45)}
+  .screen{display:none;height:100%}
+  .screen.active{display:block}
+
+  /* ============ APP SHELL (trimmed from Phase 1/2) ============ */
+  .app{display:grid;grid-template-columns:248px 1fr;height:100%}
+  .side{background:var(--surface-2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:14px 12px;min-height:0}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 12px}
+  .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),#E0742E);
+    display:grid;place-items:center;color:#fff;box-shadow:0 3px 9px rgba(194,65,12,.28)}
+  .mark svg{width:17px;height:17px}
+  .wordmark{font-size:15.5px;font-weight:650;letter-spacing:-.02em}
+  .newchat{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border-radius:var(--radius);
+    border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;
+    box-shadow:0 2px 8px rgba(194,65,12,.22)}
+  .newchat svg{width:16px;height:16px}
+  .side-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);padding:18px 10px 8px}
+  .chatlist{display:flex;flex-direction:column;gap:2px;overflow:auto;flex:1;min-height:0}
+  .chat-item{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid transparent}
+  .chat-item.active{background:var(--surface);border-color:var(--border);box-shadow:var(--shadow-sm)}
+  .chat-item .ct{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chat-item .cm{font-size:11px;color:var(--text-3);font-family:var(--mono)}
+  .nav-mini{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+  .nav-mini a{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:var(--radius-sm);color:var(--text-2);
+    font-size:13px;font-weight:550;text-decoration:none;cursor:pointer}
+  .nav-mini a.active{background:var(--surface);color:var(--accent);border:1px solid var(--border)}
+  .nav-mini svg{width:16px;height:16px}
+  .user{display:flex;align-items:center;gap:10px;padding:10px;border-top:1px solid var(--border);margin-top:8px}
+  .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,#8B6D4E,#B08B62);color:#fff;
+    display:grid;place-items:center;font-size:13px;font-weight:650;flex:0 0 auto}
+  .user-meta{min-width:0;flex:1}
+  .user-meta .name{font-size:13px;font-weight:600}
+  .user-meta .email{font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .main{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .topbar{height:60px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:14px;padding:0 20px;flex:0 0 auto}
+  .crumb{font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+  .crumb .muted{color:var(--text-3);font-weight:500}
+  .spacer{flex:1}
+  .badge{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:999px;font-size:12.5px;font-weight:600;font-family:var(--mono)}
+  .badge.credit{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line)}
+  .model-btn{display:flex;align-items:center;gap:9px;height:36px;padding:0 12px;border-radius:var(--radius-sm);
+    border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer}
+  .model-btn .price{font-family:var(--mono);font-size:11px;color:var(--text-3);font-weight:500}
+  .model-btn svg{width:14px;height:14px;color:var(--text-3)}
+  .canvas{flex:1;min-height:0;overflow:auto}
+
+  .btn-primary{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 15px;border-radius:var(--radius-sm);border:1px solid var(--accent);
+    background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(194,65,12,.22);transition:background .15s}
+  .btn-primary:hover{background:var(--accent-hover)}
+  .btn-primary svg{width:16px;height:16px}
+
+  /* ============ CHAT THREAD ============ */
+  .chat{display:flex;flex-direction:column;height:100%;min-height:0}
+  .thread{flex:1;min-height:0;overflow:auto;padding:26px 0}
+  .msg{max-width:720px;margin:0 auto 22px;padding:0 28px}
+  .msg .who{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .msg .who .ava{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff}
+  .msg.user .ava{background:linear-gradient(150deg,#8B6D4E,#B08B62)}
+  .msg.bot .ava{background:linear-gradient(150deg,var(--accent),#E0742E)}
+  .msg .who .nm{font-size:12.5px;font-weight:650}
+  .msg .who .nm small{color:var(--text-3);font-weight:500;font-family:var(--mono);font-size:11px;margin-left:4px}
+  .msg.user .bubble{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 15px;
+    font-size:14.5px;line-height:1.68}
+
+  /* --- .chat-markdown : the stylesheet this phase creates (replaces dead prose-sm) --- */
+  .chat-markdown{font-size:14.5px;line-height:1.68;color:var(--text);overflow-wrap:anywhere}
+  .chat-markdown p{margin:0 0 12px}
+  .chat-markdown p:last-child{margin-bottom:0}
+  .chat-markdown h1,.chat-markdown h2,.chat-markdown h3{font-size:15.5px;font-weight:600;margin:16px 0 8px;letter-spacing:-.01em}
+  .chat-markdown ul,.chat-markdown ol{margin:0 0 12px;padding-left:20px}
+  .chat-markdown li{margin-bottom:5px}
+  .chat-markdown strong{font-weight:650}
+  .chat-markdown code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+  .chat-markdown blockquote{margin:0 0 12px;padding-left:12px;border-left:2px solid var(--border-strong);color:var(--text-2)}
+  .chat-markdown a:not(.cite){color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+  .md-tablewrap{overflow-x:auto;margin:0 0 12px}
+  .chat-markdown table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .chat-markdown th{background:var(--surface-2);font-weight:600;text-align:left}
+  .chat-markdown th,.chat-markdown td{border:1px solid var(--border);padding:7px 10px}
+  .chat-markdown td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* --- [3] inline citation marker --- */
+  .chat-markdown a.cite{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:11px;
+    vertical-align:super;border-bottom:1px dashed var(--accent-line)}
+  .chat-markdown a.cite:hover{color:var(--accent-hover);border-bottom-style:solid}
+  .chat-markdown a.cite:focus-visible{outline:none;border-radius:3px;box-shadow:0 0 0 3px var(--accent-soft)}
+
+  .cursor-blink{display:inline-block;width:8px;height:16px;background:var(--accent);vertical-align:text-bottom;margin-left:2px;animation:blink 1s step-start infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* --- [1] research plan card --- */
+  .plan-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:12px 14px;box-shadow:var(--shadow-sm);margin-bottom:10px}
+  .plan-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .plan-head svg{width:14px;height:14px;color:var(--text-2)}
+  .plan-head .pt{font-size:12.5px;font-weight:600}
+  .plan-head .pm{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-2)}
+  .plan-list{list-style:none;margin:0;padding:0}
+  .plan-row{display:flex;align-items:center;gap:10px;height:26px}
+  .plan-row .st{width:16px;flex:0 0 auto;display:grid;place-items:center}
+  .plan-row .st .dot{width:5px;height:5px;border-radius:50%;background:var(--border-strong)}
+  .plan-row .st svg{width:13px;height:13px;color:var(--success)}
+  .plan-row .tx{font-size:14px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    transition:opacity 140ms ease}
+  .plan-row.resolved .tx{opacity:.55}
+
+  /* --- [2] tool rail + run meter --- */
+  .tools{display:flex;flex-direction:column;border-left:2px solid var(--border-strong);margin:2px 0 14px}
+  .runmeter{display:flex;align-items:center;gap:10px;min-height:24px;padding:4px 0 4px 14px;
+    font-family:var(--mono);font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .runmeter .slot{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center}
+  .runmeter .val{min-width:11ch}
+  .tool{display:flex;align-items:center;gap:10px;padding:6px 0 6px 14px;font-size:12.5px;color:var(--text-2)}
+  .tool .ti{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;color:var(--text-3)}
+  .tool .ti svg{width:14px;height:14px}
+  .tool.done .ti{color:var(--success)}
+  .tool.run .ti{color:var(--accent)}
+  .tool .tl b{font-weight:600;color:var(--text)}
+  .tool .tmeta{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--text-2)}
+  .spin{width:13px;height:13px;border:2px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* --- [4] export-as-pdf action row --- */
+  .exportrow{display:flex;align-items:center;gap:10px;height:30px;margin:10px 0 12px}
+  .btn-export{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border-radius:var(--radius-sm);
+    border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-size:12px;font-weight:550;cursor:pointer;
+    min-width:126px;justify-content:center;transition:color .15s,border-color .15s}
+  .btn-export:hover{color:var(--text);border-color:var(--border-strong)}
+  .btn-export svg{width:13px;height:13px}
+  .exportrow .failnote{font-size:11.5px;color:var(--warning)}
+
+  /* --- [5] sources card --- */
+  .sources-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:12px 14px;box-shadow:var(--shadow-sm);margin-bottom:10px}
+  .src-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .src-head .st{font-size:12.5px;font-weight:600}
+  .src-head .sm{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-2)}
+  .src-list{list-style:none;margin:0;padding:0}
+  .src-row{display:flex;align-items:center;gap:10px;min-height:34px;padding:7px 10px;border-radius:var(--radius-sm);
+    text-decoration:none;color:inherit;transition:background .15s}
+  .src-row:hover{background:var(--surface-2)}
+  .src-row:focus-visible{outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+  .src-row.is-target{background:var(--accent-soft)}
+  .src-row .bd{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);
+    border:1px solid var(--accent-line);border-radius:var(--radius-sm);padding:1px 5px;min-width:30px;text-align:center;flex:0 0 auto}
+  .src-row .ti2{font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .src-row .dm{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-2);white-space:nowrap;flex:0 0 auto}
+  .src-row .ex{width:12px;height:12px;color:var(--text-2);flex:0 0 auto}
+  .alsofound{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+  .af-box{background:var(--surface-2);border-radius:var(--radius-sm);padding:8px 10px}
+  .af-head{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-2)}
+  .af-note{font-size:11px;color:var(--text-2);margin:3px 0 6px}
+  .af-list{list-style:none;margin:0;padding:0}
+  .af-list li{font-size:12.5px;color:var(--text-2);padding:2px 0;display:flex;gap:7px;align-items:baseline}
+  .af-list li::before{content:"•";color:var(--text-3)}
+  .af-list .afd{font-family:var(--mono);font-size:11px;color:var(--text-2);margin-left:auto}
+  details.af > summary{cursor:pointer;list-style:none;font-size:11.5px;color:var(--text-2);display:flex;align-items:center;gap:6px;padding-top:4px}
+  details.af > summary::-webkit-details-marker{display:none}
+  details.af > summary .chev{width:11px;height:11px;transition:transform 150ms ease}
+  details.af[open] > summary .chev{transform:rotate(90deg)}
+
+  /* --- [6] artifact card : ONE 72px box, three states --- */
+  .artifact-card{display:flex;align-items:center;gap:13px;height:72px;padding:13px 15px;border-radius:var(--radius);
+    border:1px solid var(--accent-line);background:linear-gradient(180deg,#FFF9F5,var(--surface))}
+  .artifact-card .ac-ic{width:40px;height:40px;border-radius:10px;background:var(--accent-soft);border:1px solid var(--accent-line);
+    display:grid;place-items:center;color:var(--accent);flex:0 0 auto}
+  .artifact-card .ac-ic svg{width:20px;height:20px}
+  .artifact-card .ac-body{min-width:0}
+  .artifact-card .ac-t{font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .artifact-card .ac-d{font-size:11.5px;color:var(--text-2);margin-top:1px}
+  .artifact-card .ac-slot{margin-left:auto;width:112px;height:34px;flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end}
+  .artifact-card .ac-slot .btn-primary{height:34px}
+  .artifact-card.degraded{border-color:var(--warning-border);background:var(--warning-soft)}
+  .artifact-card.degraded .ac-ic{background:var(--warning-soft);border-color:var(--warning-border);color:var(--warning)}
+  .artifact-card.degraded .ac-t{color:var(--warning)}
+  .degraded-body{margin-top:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+
+  .composer{flex:0 0 auto;border-top:1px solid var(--border);background:var(--surface);padding:14px 20px}
+  .composer-inner{max-width:720px;margin:0 auto}
+  .composer .cbox{display:flex;align-items:center;gap:10px;height:46px;padding:0 14px;border-radius:var(--radius);
+    border:1px solid var(--border-strong);background:var(--surface);color:var(--text-3);font-size:14px}
+  .composer .cbox .btn-primary{margin-left:auto;height:34px}
+
+  /* ============ STATS ============ */
+  .pane-wide{max-width:900px;margin:0 auto;padding:34px 32px}
+  h1.title{font-size:24px;letter-spacing:-.02em;margin:0 0 8px}
+  p.lede{font-size:14.5px;line-height:1.6;color:var(--text-2);margin:0 0 24px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px}
+  .tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-sm)}
+  .tile .lb{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-2)}
+  .tile .vl{font-family:var(--mono);font-size:19px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums}
+  .tile .sb{font-size:11px;color:var(--text-2);margin-top:3px}
+  .tile.savings .vl{color:var(--success)}
+  .tile.savings.zero .vl{color:var(--text-2)}
+  .headnote{font-size:12.5px;color:var(--text-2);margin-top:-10px;margin-bottom:22px}
+  .stats-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
+  .stats-table{min-width:720px}
+  .stats-thead,.stats-row{display:grid;grid-template-columns:minmax(200px,1fr) 128px repeat(6,minmax(70px,max-content));
+    gap:14px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)}
+  .stats-thead{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-2);background:var(--surface-2)}
+  .stats-row:last-child{border-bottom:0}
+  .stats-row .cn{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stats-row .md{font-family:var(--mono);font-size:11px;color:var(--text-2)}
+  .num{font-family:var(--mono);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+  .num.saved{color:var(--success)}
+  .num.saved.zero{color:var(--text-2)}
+  .thn{text-align:right}
+  .pricenote{font-size:11.5px;color:var(--text-2);margin-top:12px;line-height:1.6}
+
+  /* ============ STATE MATRIX ============ */
+  .matrix{padding:26px 32px;overflow:auto;height:100%}
+  .mx-h{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2);margin:22px 0 10px}
+  .mx-h:first-child{margin-top:0}
+  .mx-grid{display:grid;gap:12px;max-width:760px}
+  .mx-cap{font-size:11px;font-family:var(--mono);color:var(--text-2);margin-bottom:5px}
+  .mx-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+
+  @media (prefers-reduced-motion:reduce){
+    .spin,.cursor-blink{animation:none}
+    .plan-row .tx,.src-row,details.af > summary .chev,.btn-export{transition:none}
+  }
+</style>
+
+<div class="demo">
+  <div class="demobar">
+    <div class="dt"><span class="dot"></span> MicroManus <small>Phase 3 — Deep Research</small></div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-s="s1"><span class="n">1</span> Run in progress</button>
+      <button class="tab" role="tab" aria-selected="false" data-s="s2"><span class="n">2</span> Report complete</button>
+      <button class="tab" role="tab" aria-selected="false" data-s="s3"><span class="n">3</span> PDF degraded</button>
+      <button class="tab" role="tab" aria-selected="false" data-s="s4"><span class="n">4</span> Cache savings</button>
+      <button class="tab" role="tab" aria-selected="false" data-s="s5"><span class="n">5</span> State matrix</button>
+    </div>
+    <div class="hint">Contract: <code>03-UI-SPEC.md</code></div>
+  </div>
+
+  <div class="stage">
+    <div class="frame">
+
+      <!-- ══════════════ 1 · RUN IN PROGRESS ══════════════ -->
+      <section class="screen active" id="s1">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg></div><span class="wordmark">MicroManus</span></div>
+            <button class="newchat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New research</button>
+            <div class="side-label">Chats</div>
+            <div class="chatlist">
+              <div class="chat-item active"><span class="ct">Solid-state battery status</span><span class="cm">running · $0.042</span></div>
+              <div class="chat-item"><span class="ct">EU AI Act timelines</span><span class="cm">2h ago · $0.118</span></div>
+            </div>
+            <nav class="nav-mini">
+              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Cost &amp; usage</a>
+              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7"/></svg> Settings</a>
+            </nav>
+            <div class="user"><div class="avatar">S</div><div class="user-meta"><div class="name">Siddarth</div><div class="email">reviewer@drdroid.io</div></div></div>
+          </aside>
+
+          <div class="main">
+            <div class="topbar">
+              <div class="crumb">Solid-state battery status <span class="muted">· researching</span></div>
+              <div class="spacer"></div>
+              <button class="model-btn">claude-sonnet-4-6 <span class="price">$3 / $15</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+              <span class="badge credit"><span class="dotpulse"></span>4 credits</span>
+            </div>
+
+            <div class="canvas">
+              <div class="chat">
+                <div class="thread">
+                  <div class="msg user">
+                    <div class="who"><div class="ava">S</div><div class="nm">You</div></div>
+                    <div class="bubble">What&rsquo;s the real state of solid-state battery commercialization for EVs — who ships when, and what&rsquo;s still blocking it?</div>
+                  </div>
+
+                  <div class="msg bot">
+                    <div class="who"><div class="ava">M</div><div class="nm">MicroManus <small>claude-sonnet-4-6</small></div></div>
+
+                    <!-- [1] research plan -->
+                    <div class="plan-card">
+                      <div class="plan-head">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></svg>
+                        <span class="pt">Research plan</span><span class="pm">4 sub-questions</span>
+                      </div>
+                      <ol class="plan-list">
+                        <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span><span class="tx"><span class="sr-only"></span>Which manufacturers have announced production timelines?</span></li>
+                        <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span><span class="tx">What energy-density figures are independently verified?</span></li>
+                        <li class="plan-row"><span class="st"><span class="dot"></span></span><span class="tx">What manufacturing bottlenecks remain unsolved at scale?</span></li>
+                        <li class="plan-row"><span class="st"><span class="dot"></span></span><span class="tx">How does projected cost per kWh compare to today&rsquo;s Li-ion?</span></li>
+                      </ol>
+                    </div>
+
+                    <!-- [2] run meter + tool rail -->
+                    <div class="tools">
+                      <div class="runmeter"><span class="slot"><span class="spin"></span></span><span class="val">iteration 4/12 · 1:52 elapsed</span></div>
+                      <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tl">Searched <b>&ldquo;solid-state battery production timeline 2026&rdquo;</b></span><span class="tmeta">8 results</span></div>
+                      <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tl">Read <b>toyota-global.com</b>/newsroom/battery</span><span class="tmeta">2.1k tokens</span></div>
+                      <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tl">Read <b>quantumscape.com</b>/qs-5-b-sample</span><span class="tmeta">1.8k tokens</span></div>
+                      <div class="tool run"><span class="ti"><span class="spin"></span></span><span class="tl">Reading <b>spectrum.ieee.org</b>/solid-state-yield</span><span class="tmeta">fetching…</span></div>
+                    </div>
+
+                    <!-- [3] streaming answer with citations -->
+                    <div class="chat-markdown">
+                      <p>Three manufacturers have committed to dated solid-state EV launches, and only one of those dates has survived a full year without slipping.</p>
+                      <p>Toyota is targeting a <strong>2027&ndash;28</strong> limited launch on a sulfide-electrolyte cell co-developed with Idemitsu<a class="cite" href="#src-1">[1]</a>. QuantumScape&rsquo;s QS-5 B-samples are now in automotive testing, with an independently reported <strong>844&nbsp;Wh/L</strong> at the cell level<a class="cite" href="#src-2">[2]</a> &mdash; roughly 1.6&times; a current high-nickel Li-ion pouch.</p>
+                      <p>The gap between those announcements and volume production is a <em>yield</em> problem, not a chemistry one<span class="cursor-blink"></span></p>
+                    </div>
+
+                    <!-- [6] artifact card — PENDING -->
+                    <div style="margin-top:14px">
+                      <div class="artifact-card" role="status" aria-live="polite">
+                        <div class="ac-ic"><span class="spin" style="width:18px;height:18px"></span></div>
+                        <div class="ac-body">
+                          <div class="ac-t">Solid-state battery commercialization</div>
+                          <div class="ac-d">Preparing PDF…</div>
+                        </div>
+                        <div class="ac-slot"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="composer"><div class="composer-inner"><div class="cbox">Ask a follow-up…<button class="btn-primary" disabled style="opacity:.5">Send</button></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 2 · REPORT COMPLETE ══════════════ -->
+      <section class="screen" id="s2">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg></div><span class="wordmark">MicroManus</span></div>
+            <button class="newchat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New research</button>
+            <div class="side-label">Chats</div>
+            <div class="chatlist">
+              <div class="chat-item active"><span class="ct">Solid-state battery status</span><span class="cm">just now · $0.213</span></div>
+              <div class="chat-item"><span class="ct">EU AI Act timelines</span><span class="cm">2h ago · $0.118</span></div>
+            </div>
+            <nav class="nav-mini">
+              <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Cost &amp; usage</a>
+            </nav>
+            <div class="user"><div class="avatar">S</div><div class="user-meta"><div class="name">Siddarth</div><div class="email">reviewer@drdroid.io</div></div></div>
+          </aside>
+
+          <div class="main">
+            <div class="topbar">
+              <div class="crumb">Solid-state battery status <span class="muted">· complete</span></div>
+              <div class="spacer"></div>
+              <button class="model-btn">claude-sonnet-4-6 <span class="price">$3 / $15</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+              <span class="badge credit"><span class="dotpulse"></span>4 credits</span>
+            </div>
+
+            <div class="canvas">
+              <div class="chat">
+                <div class="thread">
+                  <div class="msg bot">
+                    <div class="who"><div class="ava">M</div><div class="nm">MicroManus <small>claude-sonnet-4-6</small></div></div>
+
+                    <div class="plan-card">
+                      <div class="plan-head">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></svg>
+                        <span class="pt">Research plan</span><span class="pm">4 sub-questions</span>
+                      </div>
+                      <ol class="plan-list">
+                        <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tx">Which manufacturers have announced production timelines?</span></li>
+                        <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tx">What energy-density figures are independently verified?</span></li>
+                        <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tx">What manufacturing bottlenecks remain unsolved at scale?</span></li>
+                        <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tx">How does projected cost per kWh compare to today&rsquo;s Li-ion?</span></li>
+                      </ol>
+                    </div>
+
+                    <div class="tools">
+                      <div class="runmeter"><span class="slot"></span><span class="val">7 iterations · 3:41</span></div>
+                      <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tl">Searched <b>&ldquo;solid-state battery production timeline 2026&rdquo;</b></span><span class="tmeta">8 results</span></div>
+                      <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tl">Read 5 sources</span><span class="tmeta">11.4k tokens</span></div>
+                      <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tl"><b>Report queued</b> · Solid-state battery commercialization</span><span class="tmeta">renders after the run</span></div>
+                    </div>
+
+                    <div class="chat-markdown">
+                      <p>Three manufacturers have committed to dated solid-state EV launches, and only one of those dates has survived a full year without slipping.</p>
+                      <h3>Announced timelines</h3>
+                      <p>Toyota is targeting a <strong>2027&ndash;28</strong> limited launch on a sulfide-electrolyte cell co-developed with Idemitsu<a class="cite" href="#src-1">[1]</a>. Samsung SDI&rsquo;s pilot line is shipping samples but has published no volume date<a class="cite" href="#src-5">[5]</a>. QuantumScape remains supplier-only &mdash; its QS-5 B-samples are in automotive testing at an independently reported <strong>844&nbsp;Wh/L</strong><a class="cite" href="#src-2">[2]</a>.</p>
+                      <h3>What&rsquo;s actually blocking volume</h3>
+                      <p>The gap is a <em>yield</em> problem, not a chemistry one. Separator defect rates compound across the stack: at 100 layers, a per-layer yield of 99.5% gives a cell yield near 61%<a class="cite" href="#src-3">[3]</a>.</p>
+                      <div class="md-tablewrap">
+                        <table>
+                          <thead><tr><th>Metric</th><th>Li-ion (2026)</th><th>Solid-state (projected)</th></tr></thead>
+                          <tbody>
+                            <tr><td>Cell cost / kWh</td><td class="num">$78</td><td class="num">$180&ndash;240</td></tr>
+                            <tr><td>Energy density</td><td class="num">520 Wh/L</td><td class="num">844 Wh/L</td></tr>
+                            <tr><td>Volume production</td><td>now</td><td>2027&ndash;30</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <p>BNEF&rsquo;s 2026 index puts pack-level parity no earlier than <strong>2031</strong> under its central case<a class="cite" href="#src-4">[4]</a>.</p>
+                      <blockquote>Bottom line: the chemistry works at sample scale; the economics do not work at fleet scale before the end of the decade.</blockquote>
+                    </div>
+
+                    <!-- [4] export row -->
+                    <div class="exportrow">
+                      <button class="btn-export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Export as PDF</button>
+                    </div>
+
+                    <!-- [5] sources card -->
+                    <div class="sources-card">
+                      <div class="src-head"><span class="st">Sources</span><span class="sm">5 read</span></div>
+                      <ol class="src-list">
+                        <li><a class="src-row is-target" id="src-1" href="#"><span class="bd">[1]</span><span class="ti2">Toyota outlines 2027&ndash;28 all-solid-state EV launch window</span><span class="dm">toyota-global.com</span><svg class="ex" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a></li>
+                        <li><a class="src-row" id="src-2" href="#"><span class="bd">[2]</span><span class="ti2">QS-5 B-sample data: 844 Wh/L at cell level</span><span class="dm">quantumscape.com</span><svg class="ex" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a></li>
+                        <li><a class="src-row" id="src-3" href="#"><span class="bd">[3]</span><span class="ti2">Solid-state manufacturing yield remains the real barrier</span><span class="dm">spectrum.ieee.org</span><svg class="ex" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a></li>
+                        <li><a class="src-row" id="src-4" href="#"><span class="bd">[4]</span><span class="ti2">Battery pack cost index 2026 — central case to 2031</span><span class="dm">bnef.com</span><svg class="ex" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a></li>
+                        <li><a class="src-row" id="src-5" href="#"><span class="bd">[5]</span><span class="ti2">Samsung SDI pilot line update, Q2 2026</span><span class="dm">samsungsdi.com</span><svg class="ex" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a></li>
+                      </ol>
+                      <div class="alsofound">
+                        <div class="af-box">
+                          <div class="af-head">Also found</div>
+                          <div class="af-note">Search results the agent did not open.</div>
+                          <ul class="af-list">
+                            <li><span>Solid-state batteries: the 2030 hype cycle</span><span class="afd">medium.com</span></li>
+                            <li><span>Nio semi-solid pack teardown</span><span class="afd">insideevs.com</span></li>
+                            <li><span>Sulfide vs. oxide electrolytes explained</span><span class="afd">batteryuniversity.com</span></li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- [6] artifact card — READY -->
+                    <div class="artifact-card" role="status" aria-live="polite">
+                      <div class="ac-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg></div>
+                      <div class="ac-body">
+                        <div class="ac-t">Solid-state battery commercialization.pdf</div>
+                        <div class="ac-d">PDF · generated from this research</div>
+                      </div>
+                      <div class="ac-slot"><button class="btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Download</button></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="composer"><div class="composer-inner"><div class="cbox">Ask a follow-up…<button class="btn-primary">Send</button></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 3 · PDF DEGRADED ══════════════ -->
+      <section class="screen" id="s3">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg></div><span class="wordmark">MicroManus</span></div>
+            <button class="newchat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New research</button>
+            <div class="side-label">Chats</div>
+            <div class="chatlist"><div class="chat-item active"><span class="ct">Solid-state battery status</span><span class="cm">just now · $0.213</span></div></div>
+            <div class="user"><div class="avatar">S</div><div class="user-meta"><div class="name">Siddarth</div><div class="email">reviewer@drdroid.io</div></div></div>
+          </aside>
+
+          <div class="main">
+            <div class="topbar">
+              <div class="crumb">Solid-state battery status <span class="muted">· complete</span></div>
+              <div class="spacer"></div>
+              <span class="badge credit"><span class="dotpulse"></span>4 credits</span>
+            </div>
+
+            <div class="canvas">
+              <div class="chat">
+                <div class="thread">
+                  <div class="msg bot">
+                    <div class="who"><div class="ava">M</div><div class="nm">MicroManus <small>claude-sonnet-4-6</small></div></div>
+
+                    <div class="tools">
+                      <div class="runmeter"><span class="slot"></span><span class="val">7 iterations · 3:41</span></div>
+                      <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tl">Read 5 sources</span><span class="tmeta">11.4k tokens</span></div>
+                      <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span><span class="tl"><b>Report queued</b> · Solid-state battery commercialization</span><span class="tmeta">renders after the run</span></div>
+                    </div>
+
+                    <div class="chat-markdown">
+                      <p>Three manufacturers have committed to dated solid-state EV launches, and only one of those dates has survived a full year without slipping.<a class="cite" href="#">[1]</a></p>
+                    </div>
+
+                    <div class="exportrow">
+                      <button class="btn-export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Export as PDF</button>
+                      <span class="failnote">PDF unavailable — try again in a moment.</span>
+                    </div>
+
+                    <!-- [6] artifact card — DEGRADED, identical 72px box -->
+                    <div class="artifact-card degraded" role="status" aria-live="polite">
+                      <div class="ac-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg></div>
+                      <div class="ac-body">
+                        <div class="ac-t">PDF unavailable</div>
+                        <div class="ac-d">The renderer failed — the full report is below.</div>
+                      </div>
+                      <div class="ac-slot"></div>
+                    </div>
+
+                    <!-- [7] degraded body: the full report inline -->
+                    <div class="degraded-body">
+                      <div class="chat-markdown">
+                        <h3>Solid-state battery commercialization — full report</h3>
+                        <p>Toyota is targeting a <strong>2027&ndash;28</strong> limited launch on a sulfide-electrolyte cell co-developed with Idemitsu. Samsung SDI&rsquo;s pilot line is shipping samples but has published no volume date.</p>
+                        <h3>What&rsquo;s actually blocking volume</h3>
+                        <p>Separator defect rates compound across the stack: at 100 layers, a per-layer yield of 99.5% gives a cell yield near 61%.</p>
+                        <ul><li>Cell cost / kWh — $180&ndash;240 projected vs. $78 today</li><li>Energy density — 844 Wh/L vs. 520 Wh/L</li><li>Pack-level parity — 2031 at the earliest</li></ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer"><div class="composer-inner"><div class="cbox">Ask a follow-up…<button class="btn-primary">Send</button></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 4 · CACHE SAVINGS (STATS) ══════════════ -->
+      <section class="screen" id="s4">
+        <div class="app">
+          <aside class="side">
+            <div class="brand"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg></div><span class="wordmark">MicroManus</span></div>
+            <button class="newchat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> New research</button>
+            <div class="side-label">Chats</div>
+            <div class="chatlist">
+              <div class="chat-item"><span class="ct">Solid-state battery status</span><span class="cm">just now · $0.213</span></div>
+              <div class="chat-item"><span class="ct">EU AI Act timelines</span><span class="cm">2h ago · $0.118</span></div>
+            </div>
+            <nav class="nav-mini"><a class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Cost &amp; usage</a></nav>
+            <div class="user"><div class="avatar">S</div><div class="user-meta"><div class="name">Siddarth</div><div class="email">reviewer@drdroid.io</div></div></div>
+          </aside>
+
+          <div class="main">
+            <div class="topbar"><div class="crumb">Cost &amp; usage</div><div class="spacer"></div><span class="badge credit"><span class="dotpulse"></span>4 credits</span></div>
+            <div class="canvas">
+              <div class="pane-wide">
+                <h1 class="title">Cost &amp; usage</h1>
+                <p class="lede">Every figure below is computed from provider-reported usage at the price stored when the call was made — never from an estimate.</p>
+
+                <div class="tiles" style="margin-bottom:18px">
+                  <div class="tile"><div class="lb">Total spend</div><div class="vl">$0.4127</div><div class="sb">across 2 chats</div></div>
+                  <div class="tile"><div class="lb">Runs</div><div class="vl">6</div><div class="sb">4 credits left</div></div>
+                  <div class="tile"><div class="lb">Input</div><div class="vl">128.4k</div><div class="sb">tokens</div></div>
+                  <div class="tile"><div class="lb">Output</div><div class="vl">21.9k</div><div class="sb">tokens</div></div>
+                  <div class="tile"><div class="lb">Cache write</div><div class="vl">$0.0384</div><div class="sb">32.8k tokens</div></div>
+                  <div class="tile savings"><div class="lb">Cache savings</div><div class="vl">~$0.0891</div><div class="sb">cache read vs. input price</div></div>
+                </div>
+                <p class="headnote">Cache read saved ~$0.0891 across all runs. Cache-write cost is shown in its own tile.</p>
+
+                <div class="stats-scroll">
+                  <div class="stats-table">
+                    <div class="stats-thead">
+                      <span>Chat</span><span>Model</span><span class="thn">Input</span><span class="thn">Output</span><span class="thn">C-read</span><span class="thn">C-write</span><span class="thn">Cost</span><span class="thn">Saved</span>
+                    </div>
+                    <div class="stats-row">
+                      <span class="cn">Solid-state battery status</span><span class="md">sonnet-4-6</span>
+                      <span class="num">86.2k</span><span class="num">14.1k</span><span class="num">61.0k</span><span class="num">21.4k</span><span class="num">$0.2134</span><span class="num saved">$0.0641</span>
+                    </div>
+                    <div class="stats-row">
+                      <span class="cn">EU AI Act timelines</span><span class="md">sonnet-4-6</span>
+                      <span class="num">42.2k</span><span class="num">7.8k</span><span class="num">23.8k</span><span class="num">11.4k</span><span class="num">$0.1183</span><span class="num saved">$0.0250</span>
+                    </div>
+                    <div class="stats-row">
+                      <span class="cn">Scratch: pricing check</span><span class="md">haiku-4-5</span>
+                      <span class="num">1.2k</span><span class="num">0.3k</span><span class="num">0</span><span class="num">0</span><span class="num">$0.0028</span><span class="num saved zero">$0.000</span>
+                    </div>
+                  </div>
+                </div>
+                <p class="pricenote">Prices are those stored at call time (sonnet-4-6: $3.00 in / $15.00 out / $0.30 cache-read per 1M). Cache read saved ~$0.0641 on this run (gross — cache-write cost is listed above).</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════ 5 · STATE MATRIX ══════════════ -->
+      <section class="screen" id="s5">
+        <div class="matrix">
+          <div class="mx-h">Artifact card — one 72px box, three states (the phase&rsquo;s CLS contract)</div>
+          <div class="mx-grid">
+            <div>
+              <div class="mx-cap">pending · right slot reserved 112&times;34</div>
+              <div class="artifact-card">
+                <div class="ac-ic"><span class="spin" style="width:18px;height:18px"></span></div>
+                <div class="ac-body"><div class="ac-t">Solid-state battery commercialization</div><div class="ac-d">Preparing PDF…</div></div>
+                <div class="ac-slot"></div>
+              </div>
+            </div>
+            <div>
+              <div class="mx-cap">ready · Download is the phase&rsquo;s primary CTA</div>
+              <div class="artifact-card">
+                <div class="ac-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg></div>
+                <div class="ac-body"><div class="ac-t">Solid-state battery commercialization.pdf</div><div class="ac-d">PDF · generated from this research</div></div>
+                <div class="ac-slot"><button class="btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Download</button></div>
+              </div>
+            </div>
+            <div>
+              <div class="mx-cap">degraded · warning family, not error — graceful degrade</div>
+              <div class="artifact-card degraded">
+                <div class="ac-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg></div>
+                <div class="ac-body"><div class="ac-t">PDF unavailable</div><div class="ac-d">The renderer failed — the full report is below.</div></div>
+                <div class="ac-slot"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mx-h">Run meter — same 24px row height in both states, 11ch min-width kills digit jitter</div>
+          <div class="mx-grid">
+            <div class="mx-box" style="padding:8px 12px">
+              <div class="tools" style="margin:0">
+                <div class="runmeter"><span class="slot"><span class="spin"></span></span><span class="val">iteration 4/12 · 1:52 elapsed</span></div>
+                <div class="runmeter"><span class="slot"></span><span class="val">7 iterations · 3:41</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mx-h">Citation marker — super-aligned 11px mono, does not grow the 1.68 line box</div>
+          <div class="mx-grid">
+            <div class="mx-box">
+              <div class="chat-markdown">
+                <p>Toyota is targeting a 2027&ndash;28 limited launch<a class="cite" href="#">[1]</a>, while QuantumScape remains supplier-only<a class="cite" href="#">[2]</a>. An unregistered marker like [9] stays literal text — a citation can never be a dead link.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="mx-h">Source row — default / hover / :target (arrived from a citation)</div>
+          <div class="mx-grid">
+            <div class="mx-box" style="padding:6px 8px">
+              <a class="src-row" href="#"><span class="bd">[1]</span><span class="ti2">Toyota outlines 2027&ndash;28 all-solid-state EV launch window</span><span class="dm">toyota-global.com</span></a>
+              <a class="src-row" href="#" style="background:var(--surface-2)"><span class="bd">[2]</span><span class="ti2">QS-5 B-sample data: 844 Wh/L at cell level</span><span class="dm">quantumscape.com</span></a>
+              <a class="src-row is-target" href="#"><span class="bd">[3]</span><span class="ti2">Solid-state manufacturing yield remains the real barrier</span><span class="dm">spectrum.ieee.org</span></a>
+            </div>
+          </div>
+
+          <div class="mx-h">Export button — idle / busy share a min-width, so the label change resizes nothing</div>
+          <div class="mx-grid">
+            <div class="mx-box"><div style="display:flex;gap:12px;align-items:center">
+              <button class="btn-export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Export as PDF</button>
+              <button class="btn-export"><span class="spin" style="width:11px;height:11px"></span> Preparing…</button>
+              <span class="failnote" style="font-size:11.5px;color:var(--warning)">PDF unavailable — try again in a moment.</span>
+            </div></div>
+          </div>
+
+          <div class="mx-h">Graceful absence (D-52) — no plan block, no sources, no report ⇒ nothing renders</div>
+          <div class="mx-grid">
+            <div class="mx-box">
+              <div class="chat-markdown"><p>Solid-state cells are not yet in volume production. No skeleton, no placeholder, no &ldquo;no sources&rdquo; shell — the answer simply stands alone.</p></div>
+            </div>
+          </div>
+
+          <div class="mx-h">Cache-savings tile — green only when positive; a green $0.000 reads as a bug</div>
+          <div class="mx-grid" style="grid-template-columns:repeat(2,minmax(0,220px))">
+            <div class="tile savings"><div class="lb">Cache savings</div><div class="vl">~$0.0891</div><div class="sb">cache read vs. input price</div></div>
+            <div class="tile savings zero"><div class="lb">Cache savings</div><div class="vl">$0.000</div><div class="sb">No cached tokens yet</div></div>
+          </div>
+          <div style="height:24px"></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (x) { x.setAttribute('aria-selected', 'false'); });
+      document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
+      t.setAttribute('aria-selected', 'true');
+      document.getElementById(t.dataset.s).classList.add('active');
+    });
+  });
+</script>

@@ -1,0 +1,1197 @@
+<!-- @dsCard group="Screens" -->
+<!--
+  MicroManus — Phase 4 UI Demos (UI Refinement / polish pass)
+  Contract: .planning/phases/04-ui-refinement/04-UI-SPEC.md
+  Surfaces: landing hero (D-62/63), activity rail (D-64/65/66), answer typography
+            + citation chips (D-67), mobile drawer (D-68), focus-ring convention
+            (D-70/71), --text-3 contrast sweep.
+  Tokens copied verbatim from design/foundations.html. ONE new token this phase: --scrim.
+  Presentation note: the demo chrome is fixed dark and the app frame fixed light on
+  purpose — MicroManus has no dark mode (locked D-11), and a mockup must show the app's
+  real colors rather than the viewer's theme.
+-->
+<title>MicroManus — Phase 4 UI Demos</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#FBF9F6; --surface:#FFFFFF; --surface-2:#F4F1EC; --surface-3:#EFEBE3;
+    --border:#E9E4DB; --border-strong:#DDD6CA;
+    --text:#211D18; --text-2:#6C6459; --text-3:#9C9385;
+    --accent:#C2410C; --accent-hover:#9A3210; --accent-soft:#FBEAE0; --accent-line:#F1D3C4;
+    --success:#3B7A4B; --success-soft:#E8F1EA; --success-border:#CBE2D2;
+    --error:#B4302A; --error-soft:#FCEDEA; --error-border:#F1C9C2;
+    --warning:#C77D0E; --warning-soft:#FBF0DC; --warning-border:#EBD3A3;
+    /* NET-NEW this phase — the only new token (04-UI-SPEC § Color) */
+    --scrim:rgba(33,29,24,.44);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:12px; --radius-sm:8px; --radius-lg:18px;
+    --shadow-sm:0 1px 2px rgba(60,45,30,.06);
+    --shadow:0 6px 22px rgba(60,45,30,.10);
+    --shadow-lg:0 18px 50px rgba(60,45,30,.13);
+    --chrome:#1C1A17; --chrome-2:#2A2621; --chrome-line:#3A342C; --chrome-text:#EDE7DC; --chrome-dim:#9C9385;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:var(--sans);color:var(--text);background:var(--chrome);-webkit-font-smoothing:antialiased}
+  button{font-family:inherit}
+
+  /* ============ DEMO CHROME (verbatim grammar from 02/03 demos) ============ */
+  .demo{display:flex;flex-direction:column;min-height:100vh}
+  .demobar{background:var(--chrome);border-bottom:1px solid var(--chrome-line);color:var(--chrome-text);
+    display:flex;align-items:center;gap:16px;padding:0 18px;min-height:56px;flex:0 0 auto;flex-wrap:wrap;
+    position:sticky;top:0;z-index:20}
+  .demobar .dt{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:650;letter-spacing:-.01em;padding-right:6px}
+  .demobar .dt .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(194,65,12,.25)}
+  .demobar .dt small{color:var(--chrome-dim);font-weight:500;font-size:11.5px}
+  .tabs{display:flex;gap:4px;flex-wrap:wrap}
+  .tab{appearance:none;border:1px solid transparent;background:transparent;color:var(--chrome-dim);
+    font-size:12.5px;font-weight:600;height:34px;padding:0 13px;border-radius:8px;cursor:pointer;
+    display:flex;align-items:center;gap:7px;transition:background .15s,color .15s}
+  .tab:hover{background:var(--chrome-2);color:var(--chrome-text)}
+  .tab[aria-selected="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tab:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
+  .tab .n{font-family:var(--mono);font-size:10.5px;opacity:.7}
+  .demobar .hint{margin-left:auto;font-size:11.5px;color:var(--chrome-dim)}
+  .demobar .hint code{font-family:var(--mono);font-size:10.5px;background:var(--chrome-2);border:1px solid var(--chrome-line);
+    border-radius:5px;padding:2px 6px;color:var(--chrome-text)}
+
+  .stage{flex:1;min-height:0;padding:20px;display:flex;flex-direction:column;align-items:center;gap:16px;
+    background:radial-gradient(1100px 500px at 50% -10%, #26221D 0%, rgba(38,34,29,0) 60%), var(--chrome)}
+  .frame{width:100%;max-width:1160px;height:760px;background:var(--bg);border-radius:14px;overflow:hidden;
+    border:1px solid var(--chrome-line);box-shadow:0 30px 80px rgba(0,0,0,.45)}
+  .screen{display:none}
+  .screen.active{display:flex;flex-direction:column;align-items:center;gap:16px;width:100%}
+
+  /* annotation strip above each frame */
+  .note{width:100%;max-width:1160px;color:var(--chrome-text);display:flex;flex-wrap:wrap;gap:10px 18px;align-items:baseline}
+  .note h2{font-size:15px;font-weight:650;letter-spacing:-.01em;margin:0}
+  .note p{margin:0;font-size:12.5px;color:var(--chrome-dim);line-height:1.55;max-width:74ch}
+  .note .did{font-family:var(--mono);font-size:10.5px;color:var(--accent);background:rgba(194,65,12,.13);
+    border:1px solid rgba(194,65,12,.32);border-radius:5px;padding:2px 6px;white-space:nowrap}
+  .note .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+  /* ============ APP SHELL ============ */
+  .app{display:grid;grid-template-columns:248px 1fr;height:100%}
+  .side{background:var(--surface-2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:14px 12px;min-height:0}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 12px}
+  .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),#E0742E);
+    display:grid;place-items:center;color:#fff;box-shadow:0 3px 9px rgba(194,65,12,.28);flex:0 0 auto}
+  .mark svg{width:17px;height:17px}
+  .wordmark{font-size:15.5px;font-weight:650;letter-spacing:-.02em}
+  .newchat{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border-radius:var(--radius);
+    border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;
+    box-shadow:0 2px 8px rgba(194,65,12,.22)}
+  .newchat svg{width:16px;height:16px}
+  .side-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2);padding:18px 10px 8px}
+  .chatlist{display:flex;flex-direction:column;gap:2px;overflow:auto;flex:1;min-height:0}
+  .chat-item{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid transparent;
+    text-align:left;background:none;width:100%}
+  .chat-item.active{background:var(--surface);border-color:var(--border);box-shadow:var(--shadow-sm)}
+  .chat-item .ct{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .chat-item .cm{font-size:11px;color:var(--text-2);font-family:var(--mono)}
+  .nav-mini{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+  .nav-mini a{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:var(--radius-sm);color:var(--text-2);
+    font-size:13px;font-weight:550;text-decoration:none;cursor:pointer}
+  .nav-mini a.active{background:var(--surface);color:var(--accent);border:1px solid var(--border)}
+  .nav-mini svg{width:16px;height:16px;flex:0 0 auto}
+  .user{display:flex;align-items:center;gap:10px;padding:10px;border-top:1px solid var(--border);margin-top:8px}
+  .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,#8B6D4E,#B08B62);color:#fff;
+    display:grid;place-items:center;font-size:13px;font-weight:650;flex:0 0 auto}
+  .user-meta{min-width:0;flex:1}
+  .user-meta .name{font-size:13px;font-weight:600}
+  .user-meta .email{font-size:11.5px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .main{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .topbar{height:60px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:14px;padding:0 20px;flex:0 0 auto}
+  .crumb{font-size:14.5px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .crumb .muted{color:var(--text-2);font-weight:500}
+  .spacer{flex:1}
+  .badge{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:999px;font-size:12.5px;font-weight:600;font-family:var(--mono);
+    flex:0 0 auto}
+  .badge.credit{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line)}
+  .model-btn{display:flex;align-items:center;gap:9px;height:36px;padding:0 12px;border-radius:var(--radius-sm);
+    border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;flex:0 0 auto}
+  .model-btn .price{font-family:var(--mono);font-size:11px;color:var(--text-2);font-weight:500}
+  .model-btn svg{width:14px;height:14px;color:var(--text-2)}
+  .canvas{flex:1;min-height:0;overflow:auto}
+
+  .btn-primary{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 15px;border-radius:var(--radius-sm);border:1px solid var(--accent);
+    background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(194,65,12,.22);transition:background .15s}
+  .btn-primary:hover{background:var(--accent-hover)}
+  .btn-primary svg{width:16px;height:16px}
+
+  /* ============ CHAT THREAD ============ */
+  .chat{display:flex;flex-direction:column;height:100%;min-height:0}
+  .thread{flex:1;min-height:0;overflow:auto;padding:26px 0}
+  .msg{max-width:720px;margin:0 auto 22px;padding:0 28px}
+  .msg .who{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .msg .who .ava{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;flex:0 0 auto}
+  .msg.user .ava{background:linear-gradient(150deg,#8B6D4E,#B08B62)}
+  .msg.bot .ava{background:linear-gradient(150deg,var(--accent),#E0742E)}
+  .msg .who .nm{font-size:12.5px;font-weight:650}
+  .msg .who .nm small{color:var(--text-2);font-weight:500;font-family:var(--mono);font-size:11px;margin-left:4px}
+  .msg.user .bubble{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 15px;
+    font-size:14.5px;line-height:1.68}
+
+  /* ============ .chat-markdown — D-67 UPGRADE ============ */
+  .chat-markdown{font-size:14.5px;line-height:1.68;color:var(--text);overflow-wrap:anywhere}
+  .chat-markdown p{margin:0 0 12px}
+  .chat-markdown p:last-child{margin-bottom:0}
+  /* D-67: h1/h2 get their own 17px slot (was: flattened to the 15.5px h3 treatment) */
+  .chat-markdown h1,.chat-markdown h2{font-size:17px;font-weight:600;margin:20px 0 8px;letter-spacing:-.01em}
+  .chat-markdown h1:first-child,.chat-markdown h2:first-child{margin-top:0}
+  .chat-markdown h3{font-size:15.5px;font-weight:600;margin:16px 0 8px;letter-spacing:-.01em}
+  .chat-markdown h2+p,.chat-markdown h3+p,.chat-markdown h2+ul,.chat-markdown h3+ul{margin-top:0}
+  .chat-markdown ul,.chat-markdown ol{margin:0 0 12px;padding-left:20px}
+  .chat-markdown li{margin-bottom:5px}
+  .chat-markdown strong{font-weight:650}
+  /* D-67: models emit `---` freely; today it renders on preflight defaults */
+  .chat-markdown hr{border:0;border-top:1px solid var(--border);margin:16px 0}
+  .chat-markdown code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+  .chat-markdown blockquote{margin:0 0 12px;padding-left:12px;border-left:2px solid var(--border-strong);color:var(--text-2)}
+  .chat-markdown a:not(.cite){color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+  .md-tablewrap{overflow-x:auto;margin:0 0 12px}
+  .chat-markdown table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .chat-markdown th{background:var(--surface-2);font-weight:600;text-align:left}
+  .chat-markdown th,.chat-markdown td{border:1px solid var(--border);padding:7px 10px}
+  .chat-markdown td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* D-67: .cite becomes a chip (was: dashed-underline superscript) */
+  .chat-markdown a.cite{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:10.5px;
+    vertical-align:super;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:4px;padding:0 4px}
+  .chat-markdown a.cite:hover{background:var(--accent-line);color:var(--accent-hover)}
+  /* the OLD marker, shown only in the before/after comparison */
+  .cite-old{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:11px;
+    vertical-align:super;border-bottom:1px dashed var(--accent-line)}
+
+  .streaming-cursor{display:inline-block;width:2px;height:1.05em;margin-left:2px;vertical-align:text-bottom;
+    background:var(--accent);animation:cursor-blink 1s steps(1) infinite}
+  @keyframes cursor-blink{0%,100%{opacity:1}50%{opacity:0}}
+
+  /* ============ ACTIVITY RAIL — D-64/65/66 (NEW) ============ */
+  .rail{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow-sm);padding:12px 14px;margin-bottom:14px}
+  .rail>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;min-height:36px;
+    font-family:var(--mono);font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums;
+    border-radius:var(--radius-sm);margin:-12px -14px;padding:0 14px;transition:background .15s}
+  .rail>summary::-webkit-details-marker{display:none}
+  .rail>summary:hover{background:var(--surface-2)}
+  .rail[open]>summary{margin-bottom:2px}
+  .rail>summary .chev{width:14px;height:14px;flex:0 0 auto;color:var(--text-2);transition:transform 150ms ease}
+  .rail[open]>summary .chev{transform:rotate(90deg)}
+  .rail>summary .sum{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .rail>summary .live{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--text)}
+  .rail-body{padding-top:10px}
+
+  .plan-card{margin-bottom:6px}
+  .plan-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .plan-head svg{width:14px;height:14px;color:var(--text-2);flex:0 0 auto}
+  .plan-head .pt{font-size:12.5px;font-weight:600}
+  .plan-head .pm{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-2)}
+  .plan-list{list-style:none;margin:0;padding:0}
+  .plan-row{display:flex;align-items:center;gap:10px;height:26px}
+  .plan-row .st{width:16px;flex:0 0 auto;display:grid;place-items:center}
+  .plan-row .st .dot{width:5px;height:5px;border-radius:50%;background:var(--border-strong)}
+  .plan-row .st svg{width:13px;height:13px;color:var(--success)}
+  .plan-row .tx{font-size:14px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity 140ms ease}
+  .plan-row.resolved .tx{opacity:.55}
+
+  .tools{display:flex;flex-direction:column;border-left:2px solid var(--border-strong);margin:6px 0 0}
+  .runmeter{display:flex;align-items:center;gap:10px;min-height:24px;padding:4px 0 4px 14px;
+    font-family:var(--mono);font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .runmeter .slot{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center}
+  .runmeter .val{min-width:11ch}
+  .tool{display:flex;align-items:center;gap:10px;padding:6px 0 6px 14px;font-size:12.5px;color:var(--text-2)}
+  .tool .ti{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;color:var(--text-2)}
+  .tool .ti svg{width:14px;height:14px}
+  .tool.done .ti{color:var(--success)}
+  .tool.run .ti{color:var(--accent)}
+  .tool .tl b{font-weight:600;color:var(--text)}
+  .tool .tmeta{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--text-2);flex:0 0 auto;padding-left:10px}
+  .agent-spinner{width:13px;height:13px;border:2px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;
+    animation:agent-spin .7s linear infinite}
+  @keyframes agent-spin{to{transform:rotate(360deg)}}
+
+  /* D-66 — per-row disclosure, only when the persisted payload has content */
+  details.toolrow{border:0}
+  details.toolrow>summary{cursor:pointer;list-style:none}
+  details.toolrow>summary::-webkit-details-marker{display:none}
+  details.toolrow>summary .rowchev{width:12px;height:12px;color:var(--text-2);transition:transform 150ms ease;flex:0 0 auto}
+  details.toolrow[open]>summary .rowchev{transform:rotate(90deg)}
+  .toolpayload{list-style:none;margin:0 0 4px;padding:2px 0 6px 30px}
+  .toolpayload li{display:flex;align-items:baseline;gap:10px;padding:3px 0;font-size:12.5px;color:var(--text-2)}
+  .toolpayload .pt2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .toolpayload .pdm{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-2);flex:0 0 auto}
+  .toolpayload .pbd{font-family:var(--mono);font-size:10.5px;color:var(--accent);background:var(--accent-soft);
+    border:1px solid var(--accent-line);border-radius:4px;padding:0 4px;flex:0 0 auto}
+
+  /* ============ SOURCES / ARTIFACT (inherited, unchanged — shown for context) ============ */
+  .sources-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:12px 14px;box-shadow:var(--shadow-sm);margin-bottom:10px}
+  .src-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .src-head .st{font-size:12.5px;font-weight:600}
+  .src-head .sm{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-2)}
+  .src-list{list-style:none;margin:0;padding:0}
+  .src-row{display:flex;align-items:center;gap:10px;min-height:34px;padding:7px 10px;border-radius:var(--radius-sm);
+    text-decoration:none;color:inherit;transition:background .15s}
+  .src-row:hover{background:var(--surface-2)}
+  .src-row .bd{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);
+    border:1px solid var(--accent-line);border-radius:var(--radius-sm);padding:1px 5px;min-width:30px;text-align:center;flex:0 0 auto}
+  .src-row .ti2{font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .src-row .dm{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-2);white-space:nowrap;flex:0 0 auto}
+  .exportrow{display:flex;align-items:center;gap:10px;height:30px;margin:10px 0 12px}
+  .btn-export{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border-radius:var(--radius-sm);
+    border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-size:12px;font-weight:550;cursor:pointer;
+    min-width:126px;justify-content:center;transition:color .15s,border-color .15s}
+  .btn-export:hover{color:var(--text);border-color:var(--border-strong)}
+  .btn-export svg{width:13px;height:13px}
+  .artifact-card{display:flex;align-items:center;gap:13px;height:72px;padding:13px 15px;border-radius:var(--radius);
+    border:1px solid var(--accent-line);background:linear-gradient(180deg,#FFF9F5,var(--surface))}
+  .artifact-card .ac-ic{width:40px;height:40px;border-radius:10px;background:var(--accent-soft);border:1px solid var(--accent-line);
+    display:grid;place-items:center;color:var(--accent);flex:0 0 auto}
+  .artifact-card .ac-ic svg{width:20px;height:20px}
+  .artifact-card .ac-body{min-width:0}
+  .artifact-card .ac-t{font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .artifact-card .ac-d{font-size:11.5px;color:var(--text-2);margin-top:1px}
+  .artifact-card .ac-slot{margin-left:auto;width:112px;height:34px;flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end}
+  .artifact-card .ac-slot .btn-primary{height:34px}
+
+  .composer{flex:0 0 auto;border-top:1px solid var(--border);background:var(--surface);padding:14px 20px}
+  .composer-inner{max-width:720px;margin:0 auto}
+  .composer .cbox{display:flex;align-items:center;gap:10px;height:46px;padding:0 14px;border-radius:var(--radius);
+    border:1px solid var(--border-strong);background:var(--surface);color:var(--text-2);font-size:14px}
+  .composer .cbox .btn-primary{margin-left:auto;height:34px;flex:0 0 auto}
+
+  /* ============ HERO — D-62/63 (NEW, THIS IS THE GATED SURFACE) ============ */
+  .land{height:100%;overflow:auto;background:var(--bg)}
+  .land-nav{height:60px;display:flex;align-items:center;gap:12px;padding:0 32px;border-bottom:1px solid var(--border);
+    background:var(--surface)}
+  .land-nav .wordmark{font-size:15px}
+  .land-nav .navlinks{margin-left:auto;display:flex;gap:22px;align-items:center}
+  .land-nav .navlinks a{font-size:13px;color:var(--text-2);text-decoration:none;font-weight:550}
+  .land-nav .navlinks a:hover{color:var(--text)}
+
+  .hero{padding:56px 32px 48px;max-width:1000px;margin:0 auto}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--text-2);margin-bottom:20px}
+  .eyebrow .pip{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+  h1.hero-h{font-size:38px;line-height:1.14;font-weight:650;letter-spacing:-.025em;margin:0 0 18px;
+    max-width:20ch;text-wrap:balance}
+  h1.hero-h em{font-style:normal;color:var(--accent)}
+  .hero-sub{font-size:16.5px;line-height:1.6;color:var(--text-2);margin:0 0 32px;max-width:58ch}
+  .hero-sub strong{color:var(--text);font-weight:600}
+  .oauth{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .btn-oauth{display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 22px;border-radius:var(--radius);
+    font-size:14.5px;font-weight:600;cursor:pointer;border:1px solid var(--border-strong);background:var(--surface);
+    color:var(--text);transition:border-color .15s,background .15s}
+  .btn-oauth:hover{border-color:var(--text-2)}
+  .btn-oauth svg{width:19px;height:19px;flex:0 0 auto}
+  .btn-oauth.pri{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 2px 10px rgba(194,65,12,.24)}
+  .btn-oauth.pri:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+  .hero-fine{font-size:12.5px;color:var(--text-2);margin:0}
+  .hero-fine code{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:5px;padding:1px 5px}
+
+  .hero-how{border-top:1px solid var(--border);margin-top:44px;padding-top:28px;display:grid;
+    grid-template-columns:repeat(3,1fr);gap:26px}
+  .how-step .hk{font-family:var(--mono);font-size:11px;color:var(--text-2);display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .how-step .hk .bar{height:2px;width:18px;background:var(--border-strong);flex:0 0 auto}
+  .how-step h3{font-size:14.5px;font-weight:650;letter-spacing:-.01em;margin:0 0 5px}
+  .how-step p{font-size:13px;line-height:1.6;color:var(--text-2);margin:0}
+
+  .fold{position:relative}
+  .foldline{position:absolute;left:0;right:0;border-top:1px dashed var(--accent);pointer-events:none;z-index:5}
+  .foldline span{position:absolute;right:8px;top:-9px;font-family:var(--mono);font-size:10px;color:#fff;
+    background:var(--accent);border-radius:4px;padding:1px 6px;white-space:nowrap}
+
+  /* ============ PHONE FRAME (drawer + hero fold checks) ============ */
+  .phones{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;width:100%;max-width:1160px}
+  .phonewrap{display:flex;flex-direction:column;gap:9px;align-items:center}
+  .phonelabel{font-size:11.5px;color:var(--chrome-dim);font-family:var(--mono);text-align:center}
+  .phonelabel b{color:var(--chrome-text);font-weight:600;font-family:var(--sans)}
+  .phone{width:390px;height:660px;background:var(--bg);border-radius:22px;overflow:hidden;position:relative;
+    border:1px solid var(--chrome-line);box-shadow:0 24px 60px rgba(0,0,0,.42);flex:0 0 auto}
+  .phone-inner{height:100%;display:flex;flex-direction:column;position:relative;overflow:hidden}
+  .m-topbar{height:56px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;
+    gap:10px;padding:0 8px 0 6px;flex:0 0 auto;z-index:2}
+  .iconbtn{width:44px;height:44px;border-radius:var(--radius-sm);border:1px solid transparent;background:none;
+    color:var(--text-2);display:grid;place-items:center;cursor:pointer;flex:0 0 auto}
+  .iconbtn:hover{background:var(--surface-2);color:var(--text)}
+  .iconbtn svg{width:20px;height:20px}
+  .m-canvas{flex:1;min-height:0;overflow:auto;padding:18px 16px}
+  .m-msg{max-width:100%}
+
+  .drawer{position:absolute;inset:0 auto 0 0;width:280px;background:var(--surface);border-right:1px solid var(--border);
+    box-shadow:var(--shadow-lg);display:flex;flex-direction:column;padding:12px 10px;z-index:12;
+    transform:translateX(-100%);transition:transform 200ms ease}
+  .scrim{position:absolute;inset:0;background:var(--scrim);opacity:0;transition:opacity 200ms ease;z-index:11;
+    pointer-events:none;border:0;padding:0;display:block;width:100%}
+  .phone.open .drawer{transform:translateX(0)}
+  .phone.open .scrim{opacity:1;pointer-events:auto}
+  .drawer-top{display:flex;align-items:center;gap:8px;padding:0 2px 8px}
+  .drawer-top .mark{width:28px;height:28px}
+  @media (prefers-reduced-motion: reduce){
+    .drawer,.scrim{transition:none}
+    .rail>summary .chev,details.toolrow>summary .rowchev{transition:none}
+    .agent-spinner,.streaming-cursor{animation:none}
+  }
+
+  /* ============ COMPARISON GRID (before / after) ============ */
+  .cmp{width:100%;max-width:1160px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .cmpcard{background:var(--bg);border:1px solid var(--chrome-line);border-radius:12px;overflow:hidden;
+    display:flex;flex-direction:column;min-width:0}
+  .cmphead{display:flex;align-items:center;gap:9px;padding:10px 14px;background:var(--surface-2);
+    border-bottom:1px solid var(--border);font-size:12px;font-weight:650}
+  .cmphead .tagx{font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;
+    background:var(--error-soft);color:var(--error);border:1px solid var(--error-border);flex:0 0 auto}
+  .cmphead .tagy{background:var(--success-soft);color:var(--success);border-color:var(--success-border)}
+  .cmphead .ratio{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .cmpbody{padding:20px 18px;flex:1;background:var(--surface)}
+
+  .focusdemo{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .ringold:focus-visible{outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+  .ringnew:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:inherit}
+  .demo-input{height:44px;padding:0 13px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);
+    background:var(--surface);font-size:14px;font-family:inherit;color:var(--text);min-width:190px}
+  .demo-input:focus{border-color:var(--accent)}
+  .btn-ghost{display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:var(--radius-sm);
+    border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font-size:13.5px;font-weight:600;cursor:pointer}
+  .kbd{font-family:var(--mono);font-size:11px;background:var(--surface-2);border:1px solid var(--border-strong);
+    border-bottom-width:2px;border-radius:5px;padding:2px 6px;color:var(--text-2)}
+
+  .swatchrow{display:flex;flex-direction:column;gap:14px}
+  .swatch{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .swatch .lbl{font-family:var(--mono);font-size:10.5px;color:var(--text-2);min-width:14ch;flex:0 0 auto}
+  .swatch .sample{font-size:13px}
+  .t3{color:var(--text-3)}
+  .t2{color:var(--text-2)}
+
+  .legend{width:100%;max-width:1160px;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;
+    color:var(--chrome-dim);font-size:11.5px;padding-bottom:8px}
+  .legend .chipx{display:inline-flex;align-items:center;gap:6px;background:var(--chrome-2);border:1px solid var(--chrome-line);
+    border-radius:999px;padding:4px 10px;font-family:var(--mono);font-size:10.5px;color:var(--chrome-text)}
+
+  @media (max-width: 1000px){
+    .cmp{grid-template-columns:1fr}
+    .hero-how{grid-template-columns:1fr;gap:18px}
+    .frame{height:auto;min-height:620px}
+  }
+</style>
+
+<div class="demo">
+  <div class="demobar">
+    <div class="dt"><span class="dot"></span> MicroManus <small>Phase 4 · UI Refinement</small></div>
+    <div class="tabs" role="tablist" aria-label="Phase 4 surfaces">
+      <button class="tab" role="tab" aria-selected="true" aria-controls="s1" id="t1"><span class="n">01</span> Landing hero</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="s2" id="t2"><span class="n">02</span> Activity rail</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="s3" id="t3"><span class="n">03</span> Answer type</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="s4" id="t4"><span class="n">04</span> Mobile drawer</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="s5" id="t5"><span class="n">05</span> Focus &amp; contrast</button>
+    </div>
+    <div class="hint">Interactive — click summaries, press <code>Tab</code>, open the drawer</div>
+  </div>
+
+  <div class="stage">
+
+    <!-- ═══════════════ 01 — LANDING HERO (D-62/63, THE GATED SURFACE) ═══════════════ -->
+    <section class="screen active" id="s1" role="tabpanel" aria-labelledby="t1">
+      <div class="note">
+        <h2>Landing hero</h2>
+        <span class="did">D-62</span><span class="did">D-63 · needs your approval</span>
+        <p>The only surface in Phase 4 with no prior mockup, so it is the one thing that genuinely needs
+        sign-off rather than review. Text/CSS hero — the headline is the LCP, no image. Accent appears
+        exactly three times (brand mark, eyebrow pip, primary button), holding the 60/30/10 split.
+        Headline is 38px from the new hero-only 32–40px band; everything else is the existing scale.</p>
+      </div>
+
+      <div class="frame fold">
+        <div class="foldline" style="top:800px"><span>1280×800 fold</span></div>
+        <div class="land">
+          <div class="land-nav">
+            <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+            <span class="wordmark">MicroManus</span>
+            <span class="navlinks">
+              <a href="#how">How it works</a>
+              <a href="#pricing">What it costs</a>
+            </span>
+          </div>
+
+          <div class="hero">
+            <span class="eyebrow"><span class="pip" aria-hidden="true"></span> Deep-research agent</span>
+            <h1 class="hero-h">Research that shows its work — and <em>its bill</em>.</h1>
+            <p class="hero-sub">
+              MicroManus browses the open web in a think&#8202;→&#8202;act&#8202;→&#8202;observe loop, cites every
+              claim back to the page it came from, and exports the finished report as a PDF.
+              <strong>You bring your own model key</strong>, and every single call is metered — input,
+              output, and cached tokens, priced to the cent.
+            </p>
+
+            <div class="oauth">
+              <button class="btn-oauth pri ringnew" type="button">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.57 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.05 0-1.12.39-2.03 1.03-2.75-.11-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.21 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.92-2.34 4.78-4.57 5.04.36.32.68.94.68 1.9v2.82c0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>
+                Continue with GitHub
+              </button>
+              <button class="btn-oauth ringnew" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.2c0-.7-.06-1.36-.18-2H12v3.79h5.4a4.62 4.62 0 0 1-2 3.03v2.5h3.23c1.89-1.74 2.97-4.3 2.97-7.32Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.43l-3.22-2.5c-.9.6-2.05.95-3.4.95a5.98 5.98 0 0 1-5.62-4.13H3.06v2.6A9.99 9.99 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.38 13.89a6 6 0 0 1 0-3.82V7.47H3.06a10 10 0 0 0 0 9.03l3.32-2.61Z"/><path fill="#EA4335" d="M12 5.98c1.47 0 2.79.51 3.83 1.5l2.86-2.86A9.6 9.6 0 0 0 12 2a9.99 9.99 0 0 0-8.94 5.47l3.32 2.6A5.98 5.98 0 0 1 12 5.98Z"/></svg>
+                Continue with Google
+              </button>
+            </div>
+            <p class="hero-fine">Free to try with a credit coupon. Add your <code>OpenAI</code>, <code>Anthropic</code>, or <code>Kimi</code> key in settings — it is encrypted and never leaves the server.</p>
+
+            <div class="hero-how" id="how">
+              <div class="how-step">
+                <div class="hk"><span class="bar" aria-hidden="true"></span> think</div>
+                <h3>It writes a plan first</h3>
+                <p>Every run opens with the questions it intends to answer, so you can see the shape of the
+                research before it spends a token.</p>
+              </div>
+              <div class="how-step">
+                <div class="hk"><span class="bar" aria-hidden="true"></span> act</div>
+                <h3>Then it actually browses</h3>
+                <p>Searches, opens pages, and reads them. Each source it used is listed and numbered, and
+                every claim links back to one.</p>
+              </div>
+              <div class="how-step">
+                <div class="hk"><span class="bar" aria-hidden="true"></span> observe</div>
+                <h3>And it shows the bill</h3>
+                <p>Input, output, and cached tokens per call, per chat, priced from the provider's own
+                reported usage — never an estimate.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <p><b style="color:var(--chrome-text)">Copy rationale:</b> the headline names the product's two
+        real differentiators (it shows sources, and it shows cost) without inventing claims. No card
+        payments (ADR 0001), no team features, no coupon promise beyond "free to try with a credit
+        coupon". "Continue with GitHub / Google" are the locked OAuth strings, restyled only.</p>
+      </div>
+
+      <div class="phones">
+        <div class="phonewrap">
+          <div class="phonelabel"><b>390×844 fold check</b><br />backstop E4 / populated</div>
+          <div class="phone" style="height:844px">
+            <div class="phone-inner">
+              <div class="land" style="overflow:hidden">
+                <div class="land-nav" style="padding:0 18px">
+                  <span class="mark" aria-hidden="true" style="width:28px;height:28px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+                  <span class="wordmark">MicroManus</span>
+                </div>
+                <div class="hero" style="padding:34px 20px 30px">
+                  <span class="eyebrow" style="margin-bottom:14px"><span class="pip" aria-hidden="true"></span> Deep-research agent</span>
+                  <h1 class="hero-h" style="font-size:32px;max-width:none;margin-bottom:14px">Research that shows its work — and <em>its bill</em>.</h1>
+                  <p class="hero-sub" style="font-size:15px;margin-bottom:24px">MicroManus browses the open web, cites every claim, and exports a PDF. <strong>You bring your own model key</strong> — every call is metered to the cent.</p>
+                  <div class="oauth" style="flex-direction:column;gap:10px;margin-bottom:14px">
+                    <button class="btn-oauth pri ringnew" type="button" style="width:100%;justify-content:center">
+                      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.57 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.05 0-1.12.39-2.03 1.03-2.75-.11-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.21 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.92-2.34 4.78-4.57 5.04.36.32.68.94.68 1.9v2.82c0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>
+                      Continue with GitHub
+                    </button>
+                    <button class="btn-oauth ringnew" type="button" style="width:100%;justify-content:center">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.2c0-.7-.06-1.36-.18-2H12v3.79h5.4a4.62 4.62 0 0 1-2 3.03v2.5h3.23c1.89-1.74 2.97-4.3 2.97-7.32Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.43l-3.22-2.5c-.9.6-2.05.95-3.4.95a5.98 5.98 0 0 1-5.62-4.13H3.06v2.6A9.99 9.99 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.38 13.89a6 6 0 0 1 0-3.82V7.47H3.06a10 10 0 0 0 0 9.03l3.32-2.61Z"/><path fill="#EA4335" d="M12 5.98c1.47 0 2.79.51 3.83 1.5l2.86-2.86A9.6 9.6 0 0 0 12 2a9.99 9.99 0 0 0-8.94 5.47l3.32 2.6A5.98 5.98 0 0 1 12 5.98Z"/></svg>
+                      Continue with Google
+                    </button>
+                  </div>
+                  <p class="hero-fine">Free to try with a credit coupon. Add your own provider key in settings.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ 02 — ACTIVITY RAIL ═══════════════ -->
+    <section class="screen" id="s2" role="tabpanel" aria-labelledby="t2">
+      <div class="note">
+        <h2>Activity rail</h2>
+        <span class="did">D-64</span><span class="did">D-65</span><span class="did">D-66</span>
+        <p>The deepest-pass surface. What was a bare left-bordered tool list becomes one bounded
+        <code style="font-family:var(--mono);font-size:11px">&lt;details&gt;</code> card per research turn —
+        open while running, collapsed to a single 36px line when done. Pure render layer over
+        <code style="font-family:var(--mono);font-size:11px">deriveRunSurfaces()</code>: no new data path, no
+        SSE change. <b style="color:var(--chrome-text)">Click any summary row or chevron</b> — these are real
+        disclosure widgets.</p>
+      </div>
+      <div class="legend">
+        <span class="chipx">turn 1 — terminal, collapsed</span>
+        <span class="chipx">turn 2 — terminal, expanded + tool payload</span>
+        <span class="chipx">turn 3 — running</span>
+      </div>
+
+      <div class="frame">
+        <div class="app">
+          <aside class="side">
+            <div class="brand">
+              <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+              <span class="wordmark">MicroManus</span>
+            </div>
+            <button class="newchat ringnew" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              New chat
+            </button>
+            <div class="side-label">Recent</div>
+            <div class="chatlist">
+              <button class="chat-item active ringnew" type="button"><span class="ct">Solid-state battery supply chain</span><span class="cm">$0.0412</span></button>
+              <button class="chat-item ringnew" type="button"><span class="ct">EU AI Act — high-risk obligations timeline</span><span class="cm">$0.0233</span></button>
+              <button class="chat-item ringnew" type="button"><span class="ct">Desalination cost per m³ 2024</span><span class="cm">$0.0189</span></button>
+            </div>
+            <nav class="nav-mini">
+              <a href="#stats" class="ringnew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Stats</a>
+              <a href="#settings" class="ringnew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg> Settings</a>
+            </nav>
+            <div class="user">
+              <span class="avatar" aria-hidden="true">SR</span>
+              <span class="user-meta"><span class="name">S. Reddy</span><span class="email">siddarth@drdroid.io</span></span>
+            </div>
+          </aside>
+
+          <div class="main">
+            <div class="topbar">
+              <span class="crumb">Solid-state battery supply chain <span class="muted">· 3 runs</span></span>
+              <span class="spacer"></span>
+              <button class="model-btn ringnew" type="button">claude-sonnet-4-6 <span class="price">$3 / $15</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <span class="badge credit">4 credits</span>
+            </div>
+
+            <div class="chat">
+              <div class="thread">
+
+                <!-- turn 1 — collapsed terminal rail -->
+                <div class="msg user">
+                  <div class="who"><span class="ava" aria-hidden="true">SR</span><span class="nm">You</span></div>
+                  <div class="bubble">Who actually supplies sulfide electrolyte at scale today?</div>
+                </div>
+                <div class="msg bot">
+                  <div class="who"><span class="ava" aria-hidden="true">M</span><span class="nm">MicroManus <small>claude-sonnet-4-6</small></span></div>
+                  <details class="rail">
+                    <summary class="ringnew" aria-label="Research activity: Researched 7 sources · 4 iterations · 1:23. Expand for details.">
+                      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                      <span class="sum">Researched 7 sources · 4 iterations · 1:23</span>
+                    </summary>
+                    <div class="rail-body">
+                      <div class="plan-card">
+                        <div class="plan-head">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                          <span class="pt">Research plan</span><span class="pm">3/3</span>
+                        </div>
+                        <ul class="plan-list">
+                          <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tx">Which firms ship sulfide electrolyte in tonne quantities?</span></li>
+                          <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tx">Announced capacity vs. actual shipped volume</span></li>
+                          <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tx">Lithium sulfide precursor bottleneck</span></li>
+                        </ul>
+                      </div>
+                      <div class="tools">
+                        <div class="runmeter"><span class="slot"></span><span class="val">4 iterations</span> · <span>1:23 elapsed</span></div>
+                        <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tl"><b>Searched</b> sulfide solid electrolyte supplier tonne</span><span class="tmeta">6 results</span></div>
+                        <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tl"><b>Read</b> Idemitsu Kosan — lithium sulfide plant</span><span class="tmeta">idemitsu.com</span></div>
+                      </div>
+                    </div>
+                  </details>
+                  <div class="chat-markdown">
+                    <p>Three companies ship sulfide electrolyte in tonne quantities today: Idemitsu Kosan
+                    (~1,000 t/yr announced for 2027)<a class="cite" href="#src-1">[1]</a>, Mitsui Kinzoku, and
+                    Posco JK Solid Solution<a class="cite" href="#src-2">[2]</a>. Everyone else is at kilogram
+                    pilot scale.</p>
+                  </div>
+                </div>
+
+                <!-- turn 2 — expanded rail with an open tool-row payload -->
+                <div class="msg user">
+                  <div class="who"><span class="ava" aria-hidden="true">SR</span><span class="nm">You</span></div>
+                  <div class="bubble">What's the precursor bottleneck?</div>
+                </div>
+                <div class="msg bot">
+                  <div class="who"><span class="ava" aria-hidden="true">M</span><span class="nm">MicroManus <small>claude-sonnet-4-6</small></span></div>
+                  <details class="rail" open>
+                    <summary class="ringnew" aria-label="Research activity: Researched 5 sources · 3 iterations · 0:51. Expand for details.">
+                      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                      <span class="sum">Researched 5 sources · 3 iterations · 0:51</span>
+                    </summary>
+                    <div class="rail-body">
+                      <div class="tools">
+                        <div class="runmeter"><span class="slot"></span><span class="val">3 iterations</span> · <span>0:51 elapsed</span></div>
+
+                        <details class="toolrow" open>
+                          <summary class="tool done ringnew">
+                            <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span>
+                            <span class="tl"><b>Searched</b> lithium sulfide Li2S price precursor capacity</span>
+                            <span class="tmeta">4 results</span>
+                            <svg class="rowchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-left:10px"><path d="M9 6l6 6-6 6"/></svg>
+                          </summary>
+                          <ul class="toolpayload">
+                            <li><span class="pt2">Li2S cost is the single biggest lever on sulfide cell BOM</span><span class="pdm">nature.com</span></li>
+                            <li><span class="pt2">Battery-grade lithium sulfide pricing survey, Q1</span><span class="pdm">benchmarkminerals.com</span></li>
+                            <li><span class="pt2">Idemitsu doubles Li2S pilot output</span><span class="pdm">nikkei.com</span></li>
+                            <li><span class="pt2">Why Li2S costs 40× lithium carbonate</span><span class="pdm">chemanalyst.com</span></li>
+                          </ul>
+                        </details>
+
+                        <details class="toolrow">
+                          <summary class="tool done ringnew">
+                            <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span>
+                            <span class="tl"><b>Read</b> Li2S cost is the single biggest lever on sulfide cell BOM</span>
+                            <span class="tmeta">nature.com</span>
+                            <svg class="rowchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-left:10px"><path d="M9 6l6 6-6 6"/></svg>
+                          </summary>
+                          <ul class="toolpayload">
+                            <li><span class="pt2">Li2S cost is the single biggest lever on sulfide cell BOM</span><span class="pdm">nature.com</span><span class="pbd">[3]</span></li>
+                          </ul>
+                        </details>
+
+                        <!-- D-52: a row with no persisted payload gets NO chevron and never an empty panel -->
+                        <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tl"><b>Read</b> Battery-grade lithium sulfide pricing survey</span><span class="tmeta">benchmarkminerals.com</span></div>
+                      </div>
+                    </div>
+                  </details>
+                  <div class="chat-markdown">
+                    <p>Lithium sulfide (Li<sub>2</sub>S). It runs roughly 40× the price of lithium carbonate
+                    per tonne<a class="cite" href="#src-3">[3]</a>, and only a handful of plants make
+                    battery-grade material at all.</p>
+                  </div>
+                  <div class="exportrow">
+                    <button class="btn-export ringnew" type="button">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 21h16"/></svg>
+                      Export as PDF
+                    </button>
+                  </div>
+                  <div class="sources-card">
+                    <div class="src-head"><span class="st">Sources</span><span class="sm">5 used</span></div>
+                    <ul class="src-list">
+                      <li><a class="src-row ringnew" id="src-3" href="#src-3"><span class="bd">[3]</span><span class="ti2">Li2S cost is the single biggest lever on sulfide cell BOM</span><span class="dm">nature.com</span></a></li>
+                    </ul>
+                  </div>
+                </div>
+
+                <!-- turn 3 — running -->
+                <div class="msg user">
+                  <div class="who"><span class="ava" aria-hidden="true">SR</span><span class="nm">You</span></div>
+                  <div class="bubble">Who's closest to commercial volume in 2027?</div>
+                </div>
+                <div class="msg bot">
+                  <div class="who"><span class="ava" aria-hidden="true">M</span><span class="nm">MicroManus <small>claude-sonnet-4-6</small></span></div>
+                  <details class="rail" open>
+                    <summary class="ringnew">
+                      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                      <span class="live"><span class="agent-spinner" aria-hidden="true"></span> Research activity</span>
+                      <span class="sum" style="margin-left:auto;flex:0 0 auto">iteration 2/12 · 0:34 elapsed</span>
+                    </summary>
+                    <div class="rail-body">
+                      <div class="plan-card">
+                        <div class="plan-head">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                          <span class="pt">Research plan</span><span class="pm">1/3</span>
+                        </div>
+                        <ul class="plan-list">
+                          <li class="plan-row resolved"><span class="st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tx">Announced 2027 capacity by company</span></li>
+                          <li class="plan-row"><span class="st"><span class="dot"></span></span><span class="tx">Which announcements have broken ground</span></li>
+                          <li class="plan-row"><span class="st"><span class="dot"></span></span><span class="tx">Qualification timelines with OEM partners</span></li>
+                        </ul>
+                      </div>
+                      <div class="tools">
+                        <div class="runmeter"><span class="slot"></span><span class="val">iteration 2/12</span> · <span>0:34 elapsed</span></div>
+                        <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tl"><b>Searched</b> solid state battery 2027 pilot line capacity</span><span class="tmeta">6 results</span></div>
+                        <div class="tool run"><span class="ti"><span class="agent-spinner" aria-hidden="true"></span></span><span class="tl"><b>Reading</b> Toyota–Idemitsu joint pilot line announcement</span><span class="tmeta">toyota.co.jp</span></div>
+                      </div>
+                    </div>
+                  </details>
+                  <div class="chat-markdown">
+                    <p>Toyota and Idemitsu are furthest along — they broke ground on a joint pilot line<span class="streaming-cursor" aria-hidden="true"></span></p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="composer">
+                <div class="composer-inner">
+                  <div class="cbox">Ask a follow-up…
+                    <button class="btn-primary ringnew" type="button">Send</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmp">
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx">before</span> Terminal run, Phase 3 <span class="ratio">3 stacked elements</span></div>
+          <div class="cmpbody">
+            <div class="tools" style="margin:0">
+              <div class="runmeter"><span class="slot"></span><span class="val">4 iterations</span> · <span>1:23</span></div>
+              <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tl"><b>Searched</b> sulfide solid electrolyte supplier</span><span class="tmeta">6 results</span></div>
+              <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tl"><b>Read</b> Idemitsu Kosan — lithium sulfide plant</span><span class="tmeta">idemitsu.com</span></div>
+              <div class="tool done"><span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tl"><b>Read</b> Mitsui Kinzoku electrolyte capacity</span><span class="tmeta">mitsui-kinzoku.com</span></div>
+            </div>
+            <p style="font-size:12px;color:var(--text-2);margin:12px 0 0;line-height:1.55">Scrolling back through a
+            long chat means scrolling past every tool line of every finished run.</p>
+          </div>
+        </div>
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx tagy">after</span> Terminal run, Phase 4 <span class="ratio">one 36px row</span></div>
+          <div class="cmpbody">
+            <details class="rail" style="margin:0">
+              <summary class="ringnew">
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                <span class="sum">Researched 7 sources · 4 iterations · 1:23</span>
+              </summary>
+              <div class="rail-body"><p style="font-size:12px;color:var(--text-2);margin:0">…the same plan card, meter and tool rows, one click away.</p></div>
+            </details>
+            <p style="font-size:12px;color:var(--text-2);margin:12px 0 0;line-height:1.55">The locked meter string
+            <code style="font-family:var(--mono);font-size:11px">4 iterations · 1:23</code> survives byte-identical
+            as the suffix — the sources count is an additive prefix. A zero-source run shows the locked string alone,
+            never "Researched 0 sources".</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ 03 — ANSWER TYPOGRAPHY ═══════════════ -->
+    <section class="screen" id="s3" role="tabpanel" aria-labelledby="t3">
+      <div class="note">
+        <h2>Answer typography</h2>
+        <span class="did">D-67</span>
+        <p>One answer treatment for everything — no report card, no report-detection heuristic, no coupling to
+        the PDF stylesheet. What changes is inside <code style="font-family:var(--mono);font-size:11px">.chat-markdown</code>:
+        <code style="font-family:var(--mono);font-size:11px">h1</code>/<code style="font-family:var(--mono);font-size:11px">h2</code>
+        get a real 17px slot instead of being flattened to 15.5px, <code style="font-family:var(--mono);font-size:11px">hr</code>
+        gets a rule, and citations become chips.</p>
+      </div>
+
+      <div class="frame" style="height:auto">
+        <div style="max-width:720px;margin:0 auto;padding:32px 28px">
+          <div class="msg bot" style="max-width:none;margin:0;padding:0">
+            <div class="who"><span class="ava" aria-hidden="true">M</span><span class="nm">MicroManus <small>claude-sonnet-4-6</small></span></div>
+            <div class="chat-markdown">
+              <h2>Who ships sulfide electrolyte at scale</h2>
+              <p>Three suppliers are past pilot scale today, and the gap between announced capacity and
+              shipped volume is wide enough that the announcements are close to useless on their
+              own<a class="cite" href="#s-1">[1]</a>.</p>
+              <h3>Announced vs. shipped</h3>
+              <div class="md-tablewrap">
+                <table>
+                  <thead><tr><th>Supplier</th><th>Announced 2027</th><th>Shipped 2025</th><th>Ratio</th></tr></thead>
+                  <tbody>
+                    <tr><td>Idemitsu Kosan</td><td class="num">1,000 t</td><td class="num">~12 t</td><td class="num">1.2%</td></tr>
+                    <tr><td>Mitsui Kinzoku</td><td class="num">400 t</td><td class="num">~8 t</td><td class="num">2.0%</td></tr>
+                    <tr><td>Posco JK</td><td class="num">300 t</td><td class="num">~3 t</td><td class="num">1.0%</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <hr />
+              <h2>The precursor bottleneck</h2>
+              <p>Lithium sulfide is the constraint, not the electrolyte step itself. It runs roughly 40× lithium
+              carbonate per tonne<a class="cite" href="#s-2">[2]</a>, and battery-grade material comes from very
+              few plants<a class="cite" href="#s-3">[3]</a>.</p>
+              <ul>
+                <li>Purity requirements above <code>99.9%</code> rule out most industrial Li<sub>2</sub>S</li>
+                <li>Handling is moisture-sensitive end to end, which prices in dry-room capex<a class="cite" href="#s-4">[4]</a></li>
+              </ul>
+              <blockquote>Every announced sulfide line in Japan and Korea depends on the same three precursor
+              suppliers.</blockquote>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmp">
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx">before</span> Headings flatten to 15.5px <span class="ratio">no visible level</span></div>
+          <div class="cmpbody">
+            <div class="chat-markdown">
+              <h3 style="margin-top:0">Who ships sulfide electrolyte at scale</h3>
+              <p style="margin-bottom:8px">Three suppliers are past pilot scale today.</p>
+              <h3>The precursor bottleneck</h3>
+              <p style="margin-bottom:0">Lithium sulfide is the constraint.</p>
+            </div>
+            <p style="font-size:12px;color:var(--text-2);margin:14px 0 0;line-height:1.55">A section heading and a
+            sub-heading render identically, so a long research answer reads as one undifferentiated column.</p>
+          </div>
+        </div>
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx tagy">after</span> 17px h2 over 15.5px h3 <span class="ratio">one level, no 32px h1</span></div>
+          <div class="cmpbody">
+            <div class="chat-markdown">
+              <h2 style="margin-top:0">Who ships sulfide electrolyte at scale</h2>
+              <p style="margin-bottom:8px">Three suppliers are past pilot scale today.</p>
+              <h3>Announced vs. shipped</h3>
+              <p style="margin-bottom:0">The gap is wide enough to matter.</p>
+            </div>
+            <p style="font-size:12px;color:var(--text-2);margin:14px 0 0;line-height:1.55">One visible level of
+            structure. Still capped well below a browser-default 32px <code>h1</code>, which would break the bubble.</p>
+          </div>
+        </div>
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx">before</span> Citation — dashed underline <span class="ratio">reads as a typo</span></div>
+          <div class="cmpbody">
+            <div class="chat-markdown" style="font-size:14.5px">
+              <p style="margin:0">It runs roughly 40× lithium carbonate per tonne<a class="cite-old" href="#x">[2]</a>,
+              and battery-grade material comes from very few plants<a class="cite-old" href="#x">[3]</a>.</p>
+            </div>
+          </div>
+        </div>
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx tagy">after</span> Citation — accent-soft chip <span class="ratio">line box unchanged</span></div>
+          <div class="cmpbody">
+            <div class="chat-markdown" style="font-size:14.5px">
+              <p style="margin:0">It runs roughly 40× lithium carbonate per tonne<a class="cite" href="#x">[2]</a>,
+              and battery-grade material comes from very few plants<a class="cite" href="#x">[3]</a>.</p>
+            </div>
+            <p style="font-size:12px;color:var(--text-2);margin:14px 0 0;line-height:1.55">The chip must not grow the
+            24.4px line box as citations stream in — that is a tracked verify-time check, not something this mockup
+            can settle.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ 04 — MOBILE DRAWER ═══════════════ -->
+    <section class="screen" id="s4" role="tabpanel" aria-labelledby="t4">
+      <div class="note">
+        <h2>Mobile drawer</h2>
+        <span class="did">D-68</span>
+        <p>Below 1024px the fixed sidebar becomes a 280px off-canvas overlay — <em>overlay, not push</em>, because
+        pushing the canvas would animate a layout property. Panel slides on
+        <code style="font-family:var(--mono);font-size:11px">transform</code>, scrim fades on
+        <code style="font-family:var(--mono);font-size:11px">opacity</code>; both compositor-only, both instant
+        under reduced motion. No swipe gestures. <b style="color:var(--chrome-text)">Tap the hamburger</b> — and the
+        scrim, or Escape, to dismiss.</p>
+      </div>
+      <div class="legend">
+        <span class="chipx">--scrim rgba(33,29,24,.44) — the one new token</span>
+        <span class="chipx">panel 280px = sidebar 248 + 32</span>
+        <span class="chipx">touch targets 44×44</span>
+      </div>
+
+      <div class="phones">
+        <div class="phonewrap">
+          <div class="phonelabel"><b>Closed</b><br />390×844 · canvas full width</div>
+          <div class="phone" id="ph-closed">
+            <div class="phone-inner">
+              <div class="m-topbar">
+                <button class="iconbtn ringnew" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="dr-1" data-open="ph-closed">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+                </button>
+                <span class="crumb" style="font-size:13.5px">Solid-state battery supply chain</span>
+                <span class="spacer"></span>
+                <span class="badge credit" style="height:26px;font-size:11.5px;padding:0 9px">4</span>
+              </div>
+              <div class="m-canvas">
+                <div class="m-msg">
+                  <div class="who" style="display:flex;align-items:center;gap:9px;margin-bottom:8px"><span class="ava" aria-hidden="true" style="width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;background:linear-gradient(150deg,var(--accent),#E0742E)">M</span><span class="nm" style="font-size:12.5px;font-weight:650">MicroManus</span></div>
+                  <details class="rail">
+                    <summary class="ringnew">
+                      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                      <span class="sum">Researched 7 sources · 4 iterations · 1:23</span>
+                    </summary>
+                    <div class="rail-body"><p style="font-size:12px;color:var(--text-2);margin:0">Plan, meter and tool rows.</p></div>
+                  </details>
+                  <div class="chat-markdown">
+                    <p>Three companies ship sulfide electrolyte in tonne quantities today: Idemitsu Kosan,
+                    Mitsui Kinzoku, and Posco JK<a class="cite" href="#m1">[1]</a>.</p>
+                  </div>
+                </div>
+              </div>
+              <button class="scrim" type="button" aria-label="Close navigation" data-close="ph-closed" tabindex="-1"></button>
+              <aside class="drawer" id="dr-1" aria-label="Navigation">
+                <div class="drawer-top">
+                  <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+                  <span class="wordmark" style="font-size:14.5px">MicroManus</span>
+                  <span class="spacer"></span>
+                  <button class="iconbtn ringnew" type="button" aria-label="Close navigation" data-close="ph-closed">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                  </button>
+                </div>
+                <button class="newchat ringnew" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  New chat
+                </button>
+                <div class="side-label">Recent</div>
+                <div class="chatlist">
+                  <button class="chat-item active ringnew" type="button"><span class="ct">Solid-state battery supply chain</span><span class="cm">$0.0412</span></button>
+                  <button class="chat-item ringnew" type="button"><span class="ct">EU AI Act — high-risk obligations timeline</span><span class="cm">$0.0233</span></button>
+                  <button class="chat-item ringnew" type="button"><span class="ct">Desalination cost per m³ 2024</span><span class="cm">$0.0189</span></button>
+                </div>
+                <nav class="nav-mini">
+                  <a href="#stats" class="ringnew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Stats</a>
+                  <a href="#settings" class="ringnew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg> Settings</a>
+                </nav>
+                <div class="user">
+                  <span class="avatar" aria-hidden="true">SR</span>
+                  <span class="user-meta"><span class="name">S. Reddy</span><span class="email">siddarth@drdroid.io</span></span>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+
+        <div class="phonewrap">
+          <div class="phonelabel"><b>Open</b><br />280px panel over --scrim</div>
+          <div class="phone open" id="ph-open">
+            <div class="phone-inner">
+              <div class="m-topbar">
+                <button class="iconbtn ringnew" type="button" aria-label="Open navigation" aria-expanded="true" aria-controls="dr-2" data-open="ph-open">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+                </button>
+                <span class="crumb" style="font-size:13.5px">Solid-state battery supply chain</span>
+              </div>
+              <div class="m-canvas">
+                <div class="m-msg">
+                  <div class="chat-markdown">
+                    <p>Three companies ship sulfide electrolyte in tonne quantities today.</p>
+                  </div>
+                </div>
+              </div>
+              <button class="scrim" type="button" aria-label="Close navigation" data-close="ph-open"></button>
+              <aside class="drawer" id="dr-2" aria-label="Navigation">
+                <div class="drawer-top">
+                  <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+                  <span class="wordmark" style="font-size:14.5px">MicroManus</span>
+                  <span class="spacer"></span>
+                  <button class="iconbtn ringnew" type="button" aria-label="Close navigation" data-close="ph-open">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                  </button>
+                </div>
+                <button class="newchat ringnew" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  New chat
+                </button>
+                <div class="side-label">Recent</div>
+                <div class="chatlist">
+                  <button class="chat-item active ringnew" type="button"><span class="ct">Solid-state battery supply chain</span><span class="cm">$0.0412</span></button>
+                  <button class="chat-item ringnew" type="button"><span class="ct">EU AI Act — high-risk obligations timeline</span><span class="cm">$0.0233</span></button>
+                </div>
+                <nav class="nav-mini">
+                  <a href="#stats" class="ringnew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Stats</a>
+                  <a href="#settings" class="ringnew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg> Settings</a>
+                </nav>
+                <div class="user">
+                  <span class="avatar" aria-hidden="true">SR</span>
+                  <span class="user-meta"><span class="name">S. Reddy</span><span class="email">siddarth@drdroid.io</span></span>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+
+        <div class="phonewrap">
+          <div class="phonelabel"><b>Empty chat list</b><br />locked copy, drawer chrome still renders</div>
+          <div class="phone open" id="ph-empty">
+            <div class="phone-inner">
+              <div class="m-topbar">
+                <button class="iconbtn ringnew" type="button" aria-label="Open navigation" aria-expanded="true" aria-controls="dr-3" data-open="ph-empty">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+                </button>
+                <span class="crumb" style="font-size:13.5px">New chat</span>
+              </div>
+              <div class="m-canvas"></div>
+              <button class="scrim" type="button" aria-label="Close navigation" data-close="ph-empty"></button>
+              <aside class="drawer" id="dr-3" aria-label="Navigation">
+                <div class="drawer-top">
+                  <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+                  <span class="wordmark" style="font-size:14.5px">MicroManus</span>
+                  <span class="spacer"></span>
+                  <button class="iconbtn ringnew" type="button" aria-label="Close navigation" data-close="ph-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                  </button>
+                </div>
+                <button class="newchat ringnew" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  New chat
+                </button>
+                <div class="side-label">Recent</div>
+                <div class="chatlist">
+                  <p style="font-size:12.5px;color:var(--text-2);padding:6px 11px;margin:0;line-height:1.55">No chats yet — your research runs will show up here.</p>
+                </div>
+                <nav class="nav-mini">
+                  <a href="#stats" class="ringnew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Stats</a>
+                  <a href="#settings" class="ringnew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg> Settings</a>
+                </nav>
+                <div class="user">
+                  <span class="avatar" aria-hidden="true">SR</span>
+                  <span class="user-meta"><span class="name">S. Reddy</span><span class="email">siddarth@drdroid.io</span></span>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <p><b style="color:var(--chrome-text)">Not shown, because it cannot be:</b> focus moves to the close button
+        on open, is trapped inside the panel, and returns to the hamburger on close. That is a keyboard behaviour to
+        verify in the built page, not something a static frame demonstrates.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════ 05 — FOCUS & CONTRAST ═══════════════ -->
+    <section class="screen" id="s5" role="tabpanel" aria-labelledby="t5">
+      <div class="note">
+        <h2>Focus ring &amp; contrast</h2>
+        <span class="did">D-70</span><span class="did">D-71</span><span class="did">D-69</span>
+        <p>The Phase 2/3 focus style was a 3px <code style="font-family:var(--mono);font-size:11px">accent-soft</code>
+        box-shadow that measures about 1.1:1 against white — it was never actually visible. One
+        <code style="font-family:var(--mono);font-size:11px">:focus-visible</code> outline rule replaces it
+        everywhere. <b style="color:var(--chrome-text)">Press Tab</b> in either card below to compare them.</p>
+      </div>
+
+      <div class="cmp">
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx">before</span> 3px accent-soft box-shadow <span class="ratio">≈1.1:1 — fails</span></div>
+          <div class="cmpbody">
+            <div class="focusdemo">
+              <button class="btn-primary ringold" type="button">Redeem coupon</button>
+              <button class="btn-ghost ringold" type="button">Test key</button>
+              <input class="demo-input ringold" type="text" value="sk-ant-api03-…" aria-label="API key, before treatment" />
+            </div>
+            <p style="font-size:12px;color:var(--text-2);margin:16px 0 0;line-height:1.55">Tab through these. The ring
+            is technically painted, but at 1.1:1 you cannot tell which control has focus — so keyboard operation is
+            guesswork.</p>
+          </div>
+        </div>
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx tagy">after</span> 2px accent outline, 2px offset <span class="ratio">≈4.8:1 — passes</span></div>
+          <div class="cmpbody">
+            <div class="focusdemo">
+              <button class="btn-primary ringnew" type="button">Redeem coupon</button>
+              <button class="btn-ghost ringnew" type="button">Test key</button>
+              <input class="demo-input ringnew" type="text" value="sk-ant-api03-…" aria-label="API key, after treatment" />
+            </div>
+            <p style="font-size:12px;color:var(--text-2);margin:16px 0 0;line-height:1.55">
+              <code style="font-family:var(--mono);font-size:11px">outline</code> rather than
+              <code style="font-family:var(--mono);font-size:11px">box-shadow</code>, so the ring never enters layout
+              or paint-area maths, and <code style="font-family:var(--mono);font-size:11px">border-radius: inherit</code>
+              makes it track each control's own shape. Inputs keep their accent border <em>as well</em>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="note" style="padding-top:8px">
+        <h2 style="font-size:13.5px">Keyboard walkthrough — the whole demo path</h2>
+        <p>Every control below is reachable and operable by keyboard, using native semantics wherever possible
+        (<code style="font-family:var(--mono);font-size:11px">&lt;button&gt;</code>,
+        <code style="font-family:var(--mono);font-size:11px">&lt;details&gt;</code>/<code style="font-family:var(--mono);font-size:11px">&lt;summary&gt;</code>).
+        Press <span class="kbd" style="background:var(--chrome-2);border-color:var(--chrome-line);color:var(--chrome-text)">Tab</span> through them.</p>
+      </div>
+      <div class="frame" style="height:auto">
+        <div style="padding:26px 28px;display:flex;flex-direction:column;gap:18px">
+          <div class="focusdemo">
+            <button class="iconbtn ringnew" type="button" aria-label="Open navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+            <button class="btn-primary ringnew" type="button">Send</button>
+            <button class="btn-export ringnew" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 21h16"/></svg>
+              Download
+            </button>
+            <a href="#stats" class="ringnew" style="font-size:13.5px;color:var(--accent);font-weight:600;border-radius:4px">View stats</a>
+          </div>
+          <details class="rail" style="max-width:560px;margin:0">
+            <summary class="ringnew">
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+              <span class="sum">Researched 7 sources · 4 iterations · 1:23</span>
+            </summary>
+            <div class="rail-body"><p style="font-size:12.5px;color:var(--text-2);margin:0">Focusable via Tab, toggled with Enter or Space — native <code style="font-family:var(--mono);font-size:11px">&lt;summary&gt;</code>, no custom key handling.</p></div>
+          </details>
+          <div class="chat-markdown" style="max-width:560px">
+            <p style="margin:0">Citation chips are real links, so they take focus too<a class="cite ringnew" href="#s-9">[9]</a> — and the ring wraps the chip, not the line.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="note" style="padding-top:8px">
+        <h2 style="font-size:13.5px">The --text-3 contrast sweep</h2>
+        <p>Anything the reviewer has to <em>read</em> moves from <code style="font-family:var(--mono);font-size:11px">--text-3</code>
+        (≈2.7:1, below AA) to <code style="font-family:var(--mono);font-size:11px">--text-2</code> (≈5.3:1).
+        <code style="font-family:var(--mono);font-size:11px">--text-3</code> stays legal only for decorative or
+        duplicated content. This is the single largest work item in the phase.</p>
+      </div>
+      <div class="cmp">
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx">before</span> --text-3 #9C9385 <span class="ratio">2.7:1</span></div>
+          <div class="cmpbody">
+            <div class="swatchrow">
+              <div class="swatch"><span class="lbl">chat meta</span><span class="sample t3">$0.0412 · 4 iterations</span></div>
+              <div class="swatch"><span class="lbl">field hint</span><span class="sample t3">Stored encrypted; never sent to the browser.</span></div>
+              <div class="swatch"><span class="lbl">table sub-label</span><span class="sample t3">cached input tokens</span></div>
+              <div class="swatch"><span class="lbl">eyebrow</span><span class="sample t3" style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Recent</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cmpcard">
+          <div class="cmphead"><span class="tagx tagy">after</span> --text-2 #6C6459 <span class="ratio">5.3:1</span></div>
+          <div class="cmpbody">
+            <div class="swatchrow">
+              <div class="swatch"><span class="lbl">chat meta</span><span class="sample t2">$0.0412 · 4 iterations</span></div>
+              <div class="swatch"><span class="lbl">field hint</span><span class="sample t2">Stored encrypted; never sent to the browser.</span></div>
+              <div class="swatch"><span class="lbl">table sub-label</span><span class="sample t2">cached input tokens</span></div>
+              <div class="swatch"><span class="lbl">eyebrow</span><span class="sample t2" style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Recent</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <p><b style="color:var(--chrome-text)">Verified how:</b> Lighthouse accessibility ≥95 on six URLs (landing,
+        paywall, settings, a chat with a completed run, stats, auth-error), plus a manual keyboard walkthrough of the
+        demo path and a check of the three things Lighthouse cannot see — focus order through the rail, the drawer's
+        focus trap and return, and reduced-motion behaviour.</p>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.screen'));
+
+    function select(i) {
+      tabs.forEach(function (t, n) { t.setAttribute('aria-selected', n === i ? 'true' : 'false'); });
+      panels.forEach(function (p, n) { p.classList.toggle('active', n === i); });
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { select(i); });
+      t.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        e.preventDefault();
+        var next = (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+        tabs[next].focus();
+        select(next);
+      });
+    });
+
+    function setDrawer(phone, open) {
+      if (!phone) return;
+      phone.classList.toggle('open', open);
+      var toggle = phone.querySelector('[data-open]');
+      if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      var scrim = phone.querySelector('.scrim');
+      if (scrim) scrim.setAttribute('tabindex', open ? '0' : '-1');
+      if (open) {
+        var close = phone.querySelector('.drawer [data-close]');
+        if (close) close.focus();
+      } else if (toggle) {
+        toggle.focus();
+      }
+    }
+    document.addEventListener('click', function (e) {
+      var openBtn = e.target.closest('[data-open]');
+      if (openBtn) {
+        var ph = document.getElementById(openBtn.getAttribute('data-open'));
+        setDrawer(ph, !ph.classList.contains('open'));
+        return;
+      }
+      var closeBtn = e.target.closest('[data-close]');
+      if (closeBtn) setDrawer(document.getElementById(closeBtn.getAttribute('data-close')), false);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      Array.prototype.forEach.call(document.querySelectorAll('.phone.open'), function (ph) { setDrawer(ph, false); });
+    });
+  })();
+</script>
