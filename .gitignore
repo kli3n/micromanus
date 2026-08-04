@@ -37,3 +37,7 @@ supabase/.env
 .DS_Store
 *.pem
 npm-debug.log*
+
+# D-61 render-timing baselines (04-03): local measurement artifacts, recorded
+# in the plan SUMMARY which is the durable record.
+.d61/
