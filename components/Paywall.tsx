@@ -131,6 +131,7 @@ export function Paywall({ balance }: { balance: number }) {
             }
           >
             <svg
+              aria-hidden="true"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -156,9 +157,15 @@ export function Paywall({ balance }: { balance: number }) {
               {banner.title && (
                 <strong
                   className={
+                    // Success title is --text-2, NOT --success: --success on
+                    // --success-soft measures 4.47:1 — a text fail at
+                    // 13.5px/650 (tests/contrast.test.ts SUCCESS_ON_
+                    // SUCCESS_SOFT_VERDICT, fixed here per plan 04-04). The
+                    // green semantic stays on the glyph + border (non-text,
+                    // 3:1 bar — 4.47 clears it).
                     "block text-[13.5px] font-[650] " +
                     (isSuccess
-                      ? "text-[var(--success)]"
+                      ? "text-[var(--text-2)]"
                       : "text-[var(--error)]")
                   }
                 >
@@ -184,7 +191,12 @@ export function Paywall({ balance }: { balance: number }) {
           >
             Coupon code
           </label>
-          <div className="flex h-11 items-center gap-2 rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] transition-[border-color,box-shadow] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
+          {/* Keyboard focus ring comes from the single app-wide D-70 rule in
+              globals.css (never re-declared per control); the input keeps its
+              accent BORDER affordance in addition. The legacy focus-within
+              accent-soft shadow (1.17:1 — never AA-visible) was removed under
+              Amendment A3. */}
+          <div className="flex h-11 items-center gap-2 rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] transition-[border-color] focus-within:border-[var(--accent)] motion-reduce:transition-none">
             <input
               id="pw-input"
               value={code}
@@ -195,22 +207,30 @@ export function Paywall({ balance }: { balance: number }) {
               placeholder="SID_DRDROID"
               autoComplete="off"
               spellCheck={false}
-              className="w-full border-0 bg-transparent font-[var(--mono)] text-[13.5px] text-[var(--text)] outline-none"
+              className="w-full border-0 bg-transparent font-[var(--mono)] text-[13.5px] text-[var(--text)]"
             />
           </div>
-          <p className="mt-[6px] text-[11.5px] leading-[1.5] text-[var(--text-3)]">
+          <p className="mt-[6px] text-[11.5px] leading-[1.5] text-[var(--text-2)]">
             Have the reviewer coupon? Paste it above. Grants 5 credits, one
             time.
           </p>
         </div>
+        {/* Full designed state set (design/components.html .primary): hover
+            darkens to --accent-hover, active is a 1px translate, keyboard
+            focus is the inherited D-70 ring, loading swaps the label inside a
+            fixed h-[46px] w-full box (no resize — CLS discipline [BD]), and
+            the button is disabled while the input is empty or a redeem is in
+            flight. The empty-input error copy stays reachable via Enter. */}
         <button
           type="button"
           onClick={redeem}
-          disabled={pending}
-          className="flex h-[46px] w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--accent)] bg-[var(--accent)] text-[13.5px] font-[600] text-white transition-colors hover:bg-[var(--accent-hover)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={pending || code.trim().length === 0}
+          aria-busy={pending}
+          className="flex h-[46px] w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--accent)] bg-[var(--accent)] text-[13.5px] font-[600] text-white transition-colors hover:bg-[var(--accent-hover)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-70 motion-reduce:transition-none"
           style={{ boxShadow: "0 2px 8px rgba(194,65,12,.22)" }}
         >
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
