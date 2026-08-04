@@ -1,0 +1,168 @@
+{
+  "_readme": [
+    "The one place a raw colour value outside app/globals.css is legitimised (SC-1, plan 04-01).",
+    "Keyed on { file, value } — NEVER on a line number, because line numbers drift.",
+    "class is exactly one of: brand-exempt | demo-verbatim | pending-conversion.",
+    "  brand-exempt       a third party's brand colour that cannot be tokenised.",
+    "  demo-verbatim      an accent-derived / gradient-stop value that comes from an approved",
+    "                     design/screens/*.html mockup (D-11), not from an invention. Adjudication T-2:",
+    "                     these are allowlisted rather than tokenised, because the UI-SPEC's",
+    "                     'exactly one new token (--scrim)' budget stands. No --shadow-accent token.",
+    "  pending-conversion a genuine stray with no mockup provenance, to be replaced with an existing",
+    "                     token by the plan named in fixed_by. Plan 04-14 asserts this class is empty",
+    "                     at phase close.",
+    "provenance records the measured grep counts: `grep -c -F '<value>' design/screens/*.html design/foundations.html`.",
+    "Gate: `node scripts/audit-tokens.ts`. A STALE entry (matching nothing) is a failure too — when a",
+    "later plan converts a value, it must delete that value's entry in the same commit."
+  ],
+  "entries": [
+    {
+      "file": "components/OAuthButtons.tsx",
+      "value": "#EA4335",
+      "class": "brand-exempt",
+      "justification": "Google logo red, path 1 of the 4-path Google 'G' mark in the inline SVG. A third party's brand mark cannot be tokenised without misrepresenting the brand.",
+      "provenance": "design/screens/*.html x4 (02-phase2-demos, 03-phase3-demos, auth-error, landing); design/foundations.html x0 — present in the mockups only because they draw the same Google mark."
+    },
+    {
+      "file": "components/OAuthButtons.tsx",
+      "value": "#34A853",
+      "class": "brand-exempt",
+      "justification": "Google logo green, path 2 of the 4-path Google 'G' mark. Brand mark; not tokenisable.",
+      "provenance": "design/screens/*.html x4 (02-phase2-demos, 03-phase3-demos, auth-error, landing); design/foundations.html x0."
+    },
+    {
+      "file": "components/OAuthButtons.tsx",
+      "value": "#4A90D9",
+      "class": "brand-exempt",
+      "justification": "Google logo blue, path 3 of the 4-path Google 'G' mark. Brand mark; not tokenisable.",
+      "provenance": "design/screens/*.html x2 (auth-error, landing); design/foundations.html x0."
+    },
+    {
+      "file": "components/OAuthButtons.tsx",
+      "value": "#FBBC05",
+      "class": "brand-exempt",
+      "justification": "Google logo yellow, path 4 of the 4-path Google 'G' mark. Brand mark; not tokenisable.",
+      "provenance": "design/screens/*.html x4 (02-phase2-demos, 03-phase3-demos, auth-error, landing); design/foundations.html x0."
+    },
+    {
+      "file": "components/OAuthButtons.tsx",
+      "value": "#CFC7B9",
+      "class": "demo-verbatim",
+      "justification": "The OAuth button's hover border (`hover:border-[#CFC7B9]`). Plan 04-01 predicted brand-exempt ('the provider border in the same file'), but measurement contradicts that: this is a warm neutral one step darker than --border-strong (#DDD6CA), it is no third party's brand colour, and it is present verbatim in two mockups that were tracked long before this phase. Classified by evidence per the plan's own rule. Convertible later if a --border-hover token is ever budgeted; until then it is demo-verbatim, not exempt.",
+      "provenance": "design/screens/*.html x2 (landing.html x1, auth-error.html x1 — both tracked since 2026-07-21, i.e. provenance predates this phase); design/foundations.html x0."
+    },
+    {
+      "file": "app/page.tsx",
+      "value": "#FDF2EA",
+      "class": "demo-verbatim",
+      "justification": "Landing hero radial wash, inner stop. Plan 04-01 (following 04-RESEARCH Pitfall 1 class 3) predicted this was a genuine stray to be converted by 04-13; the mandated provenance check contradicts that — it is present verbatim in landing.html and auth-error.html, both tracked since 2026-07-21. Reclassified to demo-verbatim per the plan's explicit 'if provenance turns up, reclassify' rule. If 04-13 converts it anyway, this entry must be deleted in the same commit or the gate reports it stale.",
+      "provenance": "design/screens/*.html x2 (landing.html x1, auth-error.html x1); design/foundations.html x0."
+    },
+    {
+      "file": "app/page.tsx",
+      "value": "rgba(253,242,234,0)",
+      "class": "demo-verbatim",
+      "justification": "Landing hero radial wash, transparent outer stop — the alpha-0 form of #FDF2EA above, required because a gradient stop cannot fade to `transparent` consistently across engines. Same mockup provenance as its paired inner stop.",
+      "provenance": "design/screens/*.html x2 (landing.html x1, auth-error.html x1); design/foundations.html x0."
+    },
+    {
+      "file": "app/page.tsx",
+      "value": "#E0742E",
+      "class": "demo-verbatim",
+      "justification": "Landing logo-mark gradient end stop, paired with `var(--accent)` as the start stop. An accent-derived gradient partner, taken from the approved mockups rather than invented.",
+      "provenance": "design/screens/*.html x10 (02-phase2-demos x2, 03-phase3-demos x2, 04-phase4-demos x3, app-shell x1, auth-error x1, landing x1); design/foundations.html x0. Matches the count 04-RESEARCH measured."
+    },
+    {
+      "file": "app/page.tsx",
+      "value": "rgba(194,65,12,.28)",
+      "class": "demo-verbatim",
+      "justification": "Landing logo-mark glow — `--accent` (#c2410c) decomposed to rgb + alpha because a CSS box-shadow colour cannot take an alpha applied to a hex custom property without color-mix(). T-2: allowlisted rather than given a new --shadow-accent token, so the UI-SPEC's 'exactly one new token (--scrim)' budget stands.",
+      "provenance": "design/screens/*.html x6; design/foundations.html x0. Matches the count 04-RESEARCH measured."
+    },
+    {
+      "file": "components/AppShell.tsx",
+      "value": "#E0742E",
+      "class": "demo-verbatim",
+      "justification": "Sidebar logo-mark gradient end stop, the same accent-derived partner as the landing mark. Second file, so a second entry: the allowlist is keyed on { file, value } deliberately, so that fixing one site cannot silently keep the other legitimised.",
+      "provenance": "design/screens/*.html x10; design/foundations.html x0."
+    },
+    {
+      "file": "components/AppShell.tsx",
+      "value": "rgba(194,65,12,.28)",
+      "class": "demo-verbatim",
+      "justification": "Sidebar logo-mark glow — accent decomposed for a box-shadow. T-2, as above: no new shadow token.",
+      "provenance": "design/screens/*.html x6; design/foundations.html x0."
+    },
+    {
+      "file": "components/AppShell.tsx",
+      "value": "rgba(194,65,12,.22)",
+      "class": "demo-verbatim",
+      "justification": "New-chat button shadow — accent decomposed for a box-shadow. One of the four sites carrying this exact value (AppShell, ChatThread, Paywall, PdfTestButton), each entered separately by design.",
+      "provenance": "design/screens/*.html x7; design/foundations.html x0. Matches the count 04-RESEARCH measured."
+    },
+    {
+      "file": "components/AppShell.tsx",
+      "value": "#8B6D4E",
+      "class": "demo-verbatim",
+      "justification": "Avatar initials-disc gradient start stop, a warm-brown pair with #B08B62. Neither is accent-derived, but both come verbatim from the approved mockups; tokenising a decorative avatar gradient would spend the token budget on the least load-bearing surface in the app.",
+      "provenance": "design/screens/*.html x7 (02-phase2-demos x2, 03-phase3-demos x2, 04-phase4-demos x2, app-shell x1); design/foundations.html x0. Matches the count 04-RESEARCH measured."
+    },
+    {
+      "file": "components/AppShell.tsx",
+      "value": "#B08B62",
+      "class": "demo-verbatim",
+      "justification": "Avatar initials-disc gradient end stop, the pair of #8B6D4E above. Same mockup provenance and same rationale.",
+      "provenance": "design/screens/*.html x7 (02-phase2-demos x2, 03-phase3-demos x2, 04-phase4-demos x2, app-shell x1); design/foundations.html x0."
+    },
+    {
+      "file": "components/AppShell.tsx",
+      "value": "#FDF4EE",
+      "class": "demo-verbatim",
+      "justification": "Chat canvas radial wash, inner stop — the app-shell analogue of the landing hero wash.",
+      "provenance": "design/screens/*.html x1 (app-shell.html); design/foundations.html x0. Matches the count 04-RESEARCH measured."
+    },
+    {
+      "file": "components/AppShell.tsx",
+      "value": "rgba(253,244,238,0)",
+      "class": "demo-verbatim",
+      "justification": "Chat canvas radial wash, transparent outer stop — the alpha-0 form of #FDF4EE above, for the same cross-engine gradient-fade reason.",
+      "provenance": "design/screens/*.html x1 (app-shell.html); design/foundations.html x0."
+    },
+    {
+      "file": "components/chat/ArtifactCard.tsx",
+      "value": "#FFF9F5",
+      "class": "demo-verbatim",
+      "justification": "Settled artifact-card tint, the top stop of `linear-gradient(180deg,#FFF9F5,var(--surface))`. Plan 04-01 predicted a stray to be converted by 04-11; the provenance check contradicts that, and the source line already carries the comment 'ported verbatim from the approved demo and has no token equivalent (UI-SPEC section 6)' — two independent confirmations of demo-verbatim. Reclassified per the plan's 'if provenance turns up, reclassify' rule.",
+      "provenance": "design/screens/*.html x3 (02-phase2-demos x1 — tracked before this phase, 03-phase3-demos x1, 04-phase4-demos x1); design/foundations.html x0."
+    },
+    {
+      "file": "components/chat/ArtifactCard.tsx",
+      "value": "rgba(255,255,255,.45)",
+      "class": "pending-conversion",
+      "justification": "The pending-spinner ring border on the artifact card's PDF button. A genuine stray: zero mockup provenance and no accent derivation — it is white at 45% alpha, invented at implementation time. The paired borderTopColor on the next line is the plain keyword `white`, which is what makes the mismatch visible. Plan 04-11 owns the artifact card and converts it (a token, or a `color-mix(in srgb, white 45%, transparent)` if a token is not budgeted) and must delete this entry in the same commit.",
+      "provenance": "design/screens/*.html x0; design/foundations.html x0 — the only value in the 21-occurrence inventory with no provenance anywhere.",
+      "fixed_by": "04-11"
+    },
+    {
+      "file": "components/ChatThread.tsx",
+      "value": "rgba(194,65,12,.22)",
+      "class": "demo-verbatim",
+      "justification": "Send-button shadow — accent decomposed for a box-shadow, identical value and rationale to the AppShell new-chat button. T-2: no new shadow token.",
+      "provenance": "design/screens/*.html x7; design/foundations.html x0."
+    },
+    {
+      "file": "components/Paywall.tsx",
+      "value": "rgba(194,65,12,.22)",
+      "class": "demo-verbatim",
+      "justification": "Coupon-redeem button shadow — accent decomposed for a box-shadow. Same value and rationale as the other three primary-action buttons.",
+      "provenance": "design/screens/*.html x7; design/foundations.html x0."
+    },
+    {
+      "file": "components/PdfTestButton.tsx",
+      "value": "rgba(194,65,12,.22)",
+      "class": "demo-verbatim",
+      "justification": "Primary-button shadow in a component that is in NO render tree: its topbar render site and import were retired under EC-09 (plan 03-16, see STATE.md), and the file is retained on disk only as the Phase-1 success-criterion-5 evidence artifact. This raw value therefore cannot reach a user. Kept allowlisted rather than deleted because the file is deliberately preserved, and an un-allowlisted value in a tracked file would fail the gate for a value with no user-visible effect.",
+      "provenance": "design/screens/*.html x7; design/foundations.html x0 — same accent-derived shadow as the three live buttons."
+    }
+  ]
+}
