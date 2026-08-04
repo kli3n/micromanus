@@ -72,7 +72,7 @@
  * an unreadable report; exits 0 and prints one PASSED line otherwise.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -350,6 +350,14 @@ function auditSurface(base: string, surface: Surface, selfLaunch: boolean): Repo
         '--disable-storage-reset',
       ];
 
+  const absOut = path.join(OUT_DIR, `${surface.slug}.json`);
+
+  // Delete any previous report for this slug FIRST. The output path is
+  // deterministic per surface, so a leftover file from an earlier run against a
+  // different base URL could otherwise be read back as this run's result. The
+  // requestedUrl check below is the real guard; this just removes the trap.
+  rmSync(absOut, { force: true });
+
   const { code, out, spawnError } = runNpx(
     [
       'lighthouse',
@@ -367,33 +375,65 @@ function auditSurface(base: string, surface: Surface, selfLaunch: boolean): Repo
     fail(`${surface.slug}: could not spawn npx lighthouse — ${spawnError.message}`);
     return null;
   }
-  if (code !== 0) {
-    fail(`${surface.slug}: npx lighthouse exited ${code} for ${url}\n${out.trim().slice(0, 1200)}`);
-    return null;
-  }
 
   let parsed: unknown;
+  let readError: string | null = null;
   try {
-    parsed = JSON.parse(readFileSync(path.join(OUT_DIR, `${surface.slug}.json`), 'utf8'));
+    parsed = JSON.parse(readFileSync(absOut, 'utf8'));
   } catch (err: unknown) {
+    readError = err instanceof Error ? err.message : String(err);
+  }
+
+  const lhr = parsed as
+    | {
+        requestedUrl?: unknown;
+        categories?: { accessibility?: { score?: unknown; auditRefs?: { id: string; weight: number }[] } };
+        audits?: Record<string, { score?: unknown; title?: unknown; scoreDisplayMode?: unknown }>;
+      }
+    | undefined;
+  const rawScore = lhr?.categories?.accessibility?.score;
+  const haveScore = typeof rawScore === 'number';
+
+  /**
+   * A non-zero exit does NOT always mean "no measurement". `chrome-launcher`
+   * tears its temp profile down AFTER the report is written, and on Windows that
+   * `rmSync` routinely fails with EPERM because the browser still holds the
+   * directory — Lighthouse then exits 1 having already produced a complete,
+   * valid report. Discarding that measurement is a false negative that would
+   * make this gate unrunnable on the machine it has to run on.
+   *
+   * So the exit code is not the authority; the REPORT is. A salvaged run must
+   * still clear every check a clean run does — the file parses, it carries a
+   * numeric accessibility score, and (below) its requestedUrl is the URL we
+   * asked for — and the non-zero exit is surfaced as a warning either way, so a
+   * genuine Lighthouse error can never pass silently.
+   */
+  if (!haveScore) {
     fail(
-      `${surface.slug}: lighthouse exited 0 but ${outPath} is missing or unparseable — ` +
-        `${err instanceof Error ? err.message : String(err)}`,
+      `${surface.slug}: no usable report for ${url}. lighthouse exited ${code}` +
+        (readError !== null
+          ? `; ${outPath} is missing or unparseable — ${readError}`
+          : `; ${outPath} has no numeric categories.accessibility.score (got ${JSON.stringify(rawScore)})`) +
+        `\n${out.trim().slice(0, 1200)}`,
     );
     return null;
   }
 
-  const lhr = parsed as {
-    categories?: { accessibility?: { score?: unknown; auditRefs?: { id: string; weight: number }[] } };
-    audits?: Record<string, { score?: unknown; title?: unknown; scoreDisplayMode?: unknown }>;
-  };
-  const rawScore = lhr.categories?.accessibility?.score;
-  if (typeof rawScore !== 'number') {
+  // The report must be ABOUT the URL we requested. This is what makes the
+  // salvage path above safe, and it also catches a stale report generally.
+  if (lhr?.requestedUrl !== url) {
     fail(
-      `${surface.slug}: ${outPath} has no numeric categories.accessibility.score ` +
-        `(got ${JSON.stringify(rawScore)}) — the run produced a report but not a score`,
+      `${surface.slug}: ${outPath} reports requestedUrl ${JSON.stringify(lhr?.requestedUrl)} but ` +
+        `this run asked for ${JSON.stringify(url)} — refusing to record a score for a different page`,
     );
     return null;
+  }
+
+  if (code !== 0) {
+    console.log(
+      `  WARNING: lighthouse exited ${code} but wrote a complete report for the requested URL — ` +
+        `recording the score. Tail: ${out.trim().split('\n').slice(-1)[0]?.slice(0, 160) ?? ''}`,
+    );
   }
   const score = Math.round(rawScore * 100);
 
@@ -555,8 +595,11 @@ async function main(): Promise<void> {
   }
   console.log(
     `\nA11Y AUDIT PASSED: ${scored.length} surface(s) all scored >= ${THRESHOLD} on the Lighthouse ` +
-      `accessibility category, driven over the signed-in debug profile on port ${DEBUG_PORT}. ` +
-      `Reports are in .a11y/ (gitignored). Remember that this score cannot see :hover/:focus ` +
+      `accessibility category, driven over ` +
+      (selfLaunch
+        ? `a self-launched, signed-out headless Chromium (anonymous surfaces only)`
+        : `the signed-in debug profile on port ${DEBUG_PORT}`) +
+      `. Reports are in .a11y/ (gitignored). Remember that this score cannot see :hover/:focus ` +
       `contrast, focus order, the drawer trap or reduced-motion behaviour — D-69's manual half ` +
       `still has to be walked.`,
   );

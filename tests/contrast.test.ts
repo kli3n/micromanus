@@ -164,6 +164,22 @@ export const ADDITIONAL_PAIRS: readonly {
       "See SUCCESS_ON_SUCCESS_SOFT_VERDICT below for what the markup does.",
   },
   {
+    fg: TOKENS["--accent"],
+    bg: TOKENS["--accent-soft"],
+    ratio: 4.43,
+    note:
+      "--accent on --accent-soft — a FOURTH AA text failure, measured by the plan " +
+      "04-02 Lighthouse probe and NOT in the RESEARCH matrix, which only ever " +
+      "treated --accent-soft as a FOREGROUND (the 1.17 legacy ring) and never as a " +
+      "background. Live axe on the deployed landing page reported 4.42 for " +
+      "`code.rounded-[5px].bg-[var(--accent-soft)]` at app/page.tsx:127-136; the " +
+      "0.01 gap from 4.43 is axe's rounding, not a formula disagreement, and both " +
+      "land under 4.5. Remedies: --accent-hover (6.32) or --text-2 (4.98). " +
+      "Deliberately NOT added to FORBIDDEN_TEXT_PAIRS here: that set drives " +
+      "scripts/audit-contrast.ts, and widening a gate is a fix, not a measurement. " +
+      "Routed to 04-13 (owns app/page.tsx) and 04-11 (the components).",
+  },
+  {
     fg: TOKENS["--border"],
     bg: TOKENS["--surface"],
     ratio: 1.27,
@@ -416,8 +432,8 @@ describe("coverage — how many contrast facts this file pins", () => {
       FORBIDDEN_TEXT_PAIRS.length +
       SANCTIONED_TEXT_PAIRS.length +
       SANCTIONED_NON_TEXT_PAIRS.length;
-    // 40 matrix cells + 6 additional + 3 forbidden + 2 remedies + 6 non-text = 57.
-    expect(pinned, "distinct pinned fg/bg ratios").toBe(57);
+    // 40 matrix cells + 7 additional + 3 forbidden + 2 remedies + 6 non-text = 58.
+    expect(pinned, "distinct pinned fg/bg ratios").toBe(58);
     expect(pinned).toBeGreaterThanOrEqual(55);
   });
 });
