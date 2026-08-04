@@ -191,11 +191,10 @@ export function Paywall({ balance }: { balance: number }) {
           >
             Coupon code
           </label>
-          {/* Keyboard focus ring comes from the single app-wide D-70 rule in
-              globals.css (never re-declared per control); the input keeps its
-              accent BORDER affordance in addition. The legacy focus-within
-              accent-soft shadow (1.17:1 — never AA-visible) was removed under
-              Amendment A3. */}
+          {/* This input opts OUT of the app-wide D-70 ring (user decision,
+              04-04 checkpoint): the wrapper's focus-within accent border is
+              the sole focus affordance here. Deliberate — not one of the
+              legacy outline-none sites owned by 04-11/04-12; do not remove. */}
           <div className="flex h-11 items-center gap-2 rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] transition-[border-color] focus-within:border-[var(--accent)] motion-reduce:transition-none">
             <input
               id="pw-input"
@@ -207,7 +206,7 @@ export function Paywall({ balance }: { balance: number }) {
               placeholder="SID_DRDROID"
               autoComplete="off"
               spellCheck={false}
-              className="w-full border-0 bg-transparent font-[var(--mono)] text-[13.5px] text-[var(--text)]"
+              className="w-full border-0 bg-transparent font-[var(--mono)] text-[13.5px] text-[var(--text)] focus-visible:outline-none"
             />
           </div>
           <p className="mt-[6px] text-[11.5px] leading-[1.5] text-[var(--text-2)]">
