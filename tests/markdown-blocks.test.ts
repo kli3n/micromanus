@@ -128,6 +128,11 @@ describe("splitMarkdownBlocks", () => {
     const a = splitWithRoundTrip(lf);
     const b = splitWithRoundTrip(crlf);
     expect(b).toEqual(a);
+    // The ABSOLUTE shape, not just lf-equals-crlf: two naive splits agree with
+    // each other, so an equality-only assertion here is blind to the
+    // fence-depth guard. Measured — weakening the guard must turn this red.
+    expect(b.blocks).toEqual(["Para one.", "```ts\nx\n\ny\n```"]);
+    expect(b.tail).toBe("Tail here.");
     // A carriage return must never leak into a block's last line.
     expect([...b.blocks, b.tail].some((s) => s.includes("\r"))).toBe(false);
   });
@@ -189,9 +194,15 @@ describe("splitMarkdownBlocks", () => {
       "unclosed tilde fence at the stream edge",
     ].join("\n");
     const r = splitWithRoundTrip(src);
-    // The bash fence survives whole; the trailing tilde fence stays in the tail.
-    expect(r.blocks.filter((b) => b.startsWith("```bash"))).toHaveLength(1);
-    expect(r.blocks.some((b) => b.includes("npm test"))).toBe(true);
+    // The bash fence survives WHOLE in ONE block. Asserting the exact string is
+    // load-bearing: `startsWith("```bash")` plus a separate `includes("npm
+    // test")` is satisfied by a naive split too (it yields "```bash\nnpm run
+    // build" and "npm test\n```" as two blocks, and both predicates still
+    // hold) — so the loose form was blind to the very guard this case exists
+    // to prove. Measured against a deliberately weakened splitter.
+    const fenced = r.blocks.filter((b) => b.includes("npm run build"));
+    expect(fenced).toEqual(["```bash\nnpm run build\n\nnpm test\n```"]);
+    expect(r.blocks.filter((b) => b.includes("```"))).toHaveLength(1);
     expect(r.tail).toBe("~~~\nunclosed tilde fence at the stream edge");
     // And the invariant itself, stated explicitly here as well as in the helper.
     assertRoundTrip(src, r);
