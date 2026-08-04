@@ -248,20 +248,58 @@ function runNpx(args: string[], timeout: number): { code: number | null; out: st
 // Prerequisite probes — a clear message beats a raw subprocess stack trace.
 // ---------------------------------------------------------------------------
 
-/** Is a real Chrome DevTools endpoint listening on DEBUG_PORT? */
-async function probeDebugPort(): Promise<string | null> {
+/**
+ * Is an OPERATOR-LAUNCHED BROWSER listening on DEBUG_PORT — not merely something
+ * that speaks CDP?
+ *
+ * "Something speaks CDP on 9222" is NOT the same claim, and the difference is not
+ * hypothetical. On the machine this plan was executed on, port 9222 was already
+ * held by **Lenovo Vantage's embedded Edge WebView** (`/json/version` reported
+ * `"User-Agent": "LenovoVantage/3.0.0.191"`, and its only page target was the
+ * Vantage widget). Lighthouse attached to it happily. A gate that accepts that
+ * endpoint measures a vendor utility's WebView and reports the number as if it
+ * were a signed-in MicroManus surface — threat T-04-08 (spoofing the audited
+ * session) arriving through the front door.
+ *
+ * The discriminator is the CDP `User-Agent`: a real browser reports a browser UA
+ * (`Mozilla/5.0 … Chrome/…`), while an embedding application reports its own
+ * product string. The identity found is ALWAYS printed, so a wrong attach is
+ * visible in the transcript rather than silent.
+ */
+async function probeDebugPort(): Promise<{ error: string | null; identity: string }> {
+  let identity = 'unknown';
   try {
     const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/version`, {
       signal: AbortSignal.timeout(4000),
     });
-    if (!res.ok) return `port ${DEBUG_PORT} answered HTTP ${res.status}, not a CDP endpoint`;
-    const info = (await res.json()) as { Browser?: unknown };
-    if (typeof info.Browser !== 'string') {
-      return `port ${DEBUG_PORT} answered, but the payload is not a CDP /json/version response`;
+    if (!res.ok) {
+      return { error: `port ${DEBUG_PORT} answered HTTP ${res.status}, not a CDP endpoint`, identity };
     }
-    return null;
+    const info = (await res.json()) as { Browser?: unknown; 'User-Agent'?: unknown };
+    if (typeof info.Browser !== 'string') {
+      return {
+        error: `port ${DEBUG_PORT} answered, but the payload is not a CDP /json/version response`,
+        identity,
+      };
+    }
+    const ua = typeof info['User-Agent'] === 'string' ? info['User-Agent'] : '';
+    identity = `${info.Browser} / UA ${ua || '(absent)'}`;
+    if (!/^Mozilla\/5\.0\b/.test(ua) || !/\b(Chrome|Chromium)\/[\d.]+/.test(ua)) {
+      return {
+        error:
+          `port ${DEBUG_PORT} is held by something that speaks CDP but is NOT a browser you can ` +
+          `sign into — it reports ${identity}. An embedded WebView (Lenovo Vantage, Teams, an ` +
+          `Electron app) will let Lighthouse attach and produce a score for a page that is not ` +
+          `your app. Close it or free the port, then launch a real browser`,
+        identity,
+      };
+    }
+    return { error: null, identity };
   } catch (err: unknown) {
-    return `nothing usable is listening on port ${DEBUG_PORT} (${err instanceof Error ? err.message : String(err)})`;
+    return {
+      error: `nothing usable is listening on port ${DEBUG_PORT} (${err instanceof Error ? err.message : String(err)})`,
+      identity,
+    };
   }
 }
 
@@ -288,21 +326,35 @@ interface Report {
   failing: FailingAudit[];
 }
 
-function auditSurface(base: string, surface: Surface): Report | null {
+function auditSurface(base: string, surface: Surface, selfLaunch: boolean): Report | null {
   const url = `${base}${surface.path}`;
   const outPath = `./.a11y/${surface.slug}.json`;
+
+  const attachArgs = selfLaunch
+    ? [
+        // Self-launch: Lighthouse starts its own headless Chromium on an
+        // ephemeral port with a fresh profile. No --port, and no
+        // --disable-storage-reset — there is no session to preserve, and a fresh
+        // profile is signed out by construction, which is exactly what an
+        // ANONYMOUS surface wants. Guarded upstream so this can never be used on
+        // a surface that requires a session.
+        '--chrome-flags=--headless=new --no-sandbox',
+      ]
+    : [
+        `--port=${DEBUG_PORT}`,
+        // MANDATORY. Lighthouse clears cookies and storage by default, which signs
+        // the debug profile out before the first AUTHENTICATED surface is reached —
+        // the paywall, settings, chat and stats runs would then all silently audit
+        // a redirect to the landing page and could even report a passing score for
+        // a screen that never rendered.
+        '--disable-storage-reset',
+      ];
 
   const { code, out, spawnError } = runNpx(
     [
       'lighthouse',
       url,
-      `--port=${DEBUG_PORT}`,
-      // MANDATORY. Lighthouse clears cookies and storage by default, which signs
-      // the debug profile out before the first AUTHENTICATED surface is reached —
-      // the paywall, settings, chat and stats runs would then all silently audit
-      // a redirect to the landing page and could even report a passing score for
-      // a screen that never rendered.
-      '--disable-storage-reset',
+      ...attachArgs,
       '--only-categories=accessibility',
       '--output=json',
       `--output-path=${outPath}`,
@@ -378,8 +430,16 @@ function parseOnly(): string | null {
   return null;
 }
 
+const KNOWN_FLAGS = /^(--only=.+|--self-launch)$/;
+
 async function main(): Promise<void> {
+  for (const arg of process.argv.slice(2)) {
+    if (!KNOWN_FLAGS.test(arg)) {
+      throw new Error(`unknown argument ${JSON.stringify(arg)}. Usage: [--only=<slug>] [--self-launch]`);
+    }
+  }
   const only = parseOnly();
+  const selfLaunch = process.argv.slice(2).includes('--self-launch');
   const known = SURFACES.map((s) => s.slug);
   if (only !== null && !known.includes(only)) {
     throw new Error(`--only=${only} is not a known surface. Known slugs: ${known.join(', ')}`);
@@ -402,16 +462,41 @@ async function main(): Promise<void> {
   );
 
   console.log('prerequisites:');
-  const portProblem = await probeDebugPort();
-  if (portProblem !== null) {
-    throw new Error(
-      `${portProblem}\n\n` +
-        `Launch a debug Chrome and sign in through real OAuth in that window first:\n\n` +
-        `    ${CHROME_LAUNCH_LINE}\n\n` +
-        `${DEVTOOLS_FALLBACK}`,
+  if (selfLaunch) {
+    // THE GUARD that keeps --self-launch from becoming a fail-open. A freshly
+    // launched browser holds no session, so an authenticated surface would follow
+    // the layout guard's redirect and Lighthouse would score the LANDING page
+    // while the report is filed under `paywall` / `settings` / `chat` / `stats`.
+    // That is threat T-04-08 exactly, and it would score WELL. Refuse instead.
+    const sessioned = surfaces.filter((s) => s.requires !== 'anon');
+    if (sessioned.length > 0) {
+      throw new Error(
+        `--self-launch audits a FRESH, signed-out browser, so it is only valid for anonymous ` +
+          `surfaces. Refusing: ${sessioned.map((s) => `${s.slug} (${s.requires})`).join(', ')}. ` +
+          `Those would silently audit the signed-out redirect target and report a passing score ` +
+          `for a screen that never rendered. Use the debug-profile route (no --self-launch) for them.`,
+      );
+    }
+    pass(
+      `self-launch mode: lighthouse will start its own headless Chromium with a fresh, signed-out ` +
+        `profile (${surfaces.length} anonymous surface(s) only)`,
     );
+    if (process.env.CHROME_PATH) {
+      pass(`CHROME_PATH is set — lighthouse will use ${process.env.CHROME_PATH}`);
+    }
+  } else {
+    const port = await probeDebugPort();
+    if (port.error !== null) {
+      throw new Error(
+        `${port.error}\n\n` +
+          `Launch a debug Chrome and sign in through real OAuth in that window first:\n\n` +
+          `    ${CHROME_LAUNCH_LINE}\n\n` +
+          `For an ANONYMOUS surface you can skip the sign-in entirely with --self-launch.\n\n` +
+          `${DEVTOOLS_FALLBACK}`,
+      );
+    }
+    pass(`a real browser is listening on port ${DEBUG_PORT}: ${port.identity}`);
   }
-  pass(`a CDP endpoint is listening on port ${DEBUG_PORT}`);
 
   const lighthouseProblem = probeLighthouse();
   if (lighthouseProblem !== null) {
@@ -432,7 +517,7 @@ async function main(): Promise<void> {
     if (surface.requires !== 'anon') {
       console.log(`  NOTE: the debug browser must currently hold a ${surface.requires}.`);
     }
-    const report = auditSurface(base, surface);
+    const report = auditSurface(base, surface, selfLaunch);
     if (report === null) continue;
     scored.push({ surface, report });
 
