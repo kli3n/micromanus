@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { splitMarkdownBlocks } from "@/components/chat/markdown-blocks";
+import { blockPropsEqual } from "@/components/chat/MarkdownBlocks";
 
 /**
  * splitMarkdownBlocks (04-03 Task 2) — the fence-aware block splitter that is
@@ -206,5 +207,152 @@ describe("splitMarkdownBlocks", () => {
     expect(r.tail).toBe("~~~\nunclosed tilde fence at the stream edge");
     // And the invariant itself, stated explicitly here as well as in the helper.
     assertRoundTrip(src, r);
+  });
+});
+
+/**
+ * blockPropsEqual (04-07 Task 2) — the memo comparator for the rung-3
+ * block-memoized renderer (`components/chat/MarkdownBlocks.tsx`).
+ *
+ * This is THE correctness surface of the escalation, tested as an exported
+ * pure function because no test in this repo can render a component (node
+ * env, no DOM). The memo decision — "is this completed block's rendered
+ * output re-derived or reused?" — is exactly the comparator's return value,
+ * so asserting the comparator IS asserting the memo behaviour.
+ *
+ * The one non-obvious term: the comparator must include a REGISTRY VERSION.
+ * `remarkCitations(registry)` resolves `[n]` markers at render time, and the
+ * locked RSCH-02 contract (lib/markdown/remark-citations.ts:9-10) is that a
+ * marker streamed before its source registers renders as plain text and
+ * UPGRADES to a link on a later delta. A text-only comparator would freeze an
+ * early memoized block's citations forever — a silent, permanent regression
+ * on the surface the reviewer reads most (threat T-04-33). `registry.size` is
+ * a sound version counter because the registry is append-only (built by
+ * `registry.add(n)` inside deriveRunSurfaces, never deleted), so its size is
+ * monotonic.
+ *
+ * Two-sided discipline (same as tests/d61-rung2.test.ts): the cases below
+ * also pin why the EXPLICIT comparator is load-bearing — the registry `Set`
+ * is a fresh object identity on every render (deriveRunSurfaces constructs
+ * `new Set()` per call), so React's default shallow prop equality would
+ * return "not equal" on every flush and the memo would never fire at all.
+ */
+describe("blockPropsEqual (rung-3 memo comparator)", () => {
+  /** A prop shape per render: fresh Set identity, as deriveRunSurfaces produces. */
+  const props = (text: string, registered: number[]) => ({
+    text,
+    registry: new Set(registered),
+  });
+
+  it("comparator case 1 — identical text + identical registry size compare equal across FRESH registry identities (shallow equality would re-render every block)", () => {
+    const a = props("A completed paragraph.", [1, 2]);
+    const b = props("A completed paragraph.", [1, 2]);
+    // The fresh-identity fact that makes the explicit comparator load-bearing:
+    expect(Object.is(a.registry, b.registry)).toBe(false);
+    // Default shallow equality (what memo() without a comparator would do)
+    // says "changed" — the memo would never fire:
+    expect(a.registry === b.registry && a.text === b.text).toBe(false);
+    // The explicit comparator says "unchanged" — the block is NOT re-parsed:
+    expect(blockPropsEqual(a, b)).toBe(true);
+  });
+
+  it("comparator case 2 — a completed block is not re-derived when the tail grows (the pure memo decision across stream growth)", () => {
+    const step1 = "First block.\n\nSecond blo";
+    const step2 = "First block.\n\nSecond block grows and grows";
+    const r1 = splitMarkdownBlocks(step1);
+    const r2 = splitMarkdownBlocks(step2);
+    // Same completed-block prefix on both steps…
+    expect(r2.blocks).toEqual(r1.blocks);
+    // …and for every completed block, the comparator (fed fresh registry
+    // identities per render, unchanged size) decides "reuse", never "re-parse".
+    for (let i = 0; i < r1.blocks.length; i++) {
+      expect(
+        blockPropsEqual(props(r1.blocks[i], [1]), props(r2.blocks[i], [1])),
+      ).toBe(true);
+    }
+    // The live tail DID change, so the tail block re-renders:
+    expect(blockPropsEqual(props(r1.tail, [1]), props(r2.tail, [1]))).toBe(
+      false,
+    );
+  });
+
+  it("comparator case 3 — registry growth makes EVERY block compare not-equal (all blocks re-resolve their citations)", () => {
+    const blocks = ["Alpha [1].", "Beta prose.", "Gamma [2]."];
+    for (const text of blocks) {
+      expect(blockPropsEqual(props(text, [1]), props(text, [1, 2]))).toBe(
+        false,
+      );
+    }
+  });
+
+  it("comparator case 4 — citation upgrade: a marker in an EARLY block before its source registers is not memo-equal once the registry grows", () => {
+    // The RSCH-02 contract: "[3]" streamed before source 3 registers renders
+    // as plain text and upgrades to a link on a later delta. The upgrade is
+    // physically a re-render of an already-completed block — the ONLY thing
+    // that forces it through the memo is the registry-version term. A
+    // text-only comparator returns true here and freezes the plain text
+    // forever (T-04-33).
+    const early = "Solid-state cells are near pilot scale [3].";
+    const beforeRegistration = props(early, []);
+    const afterRegistration = props(early, [3]);
+    expect(beforeRegistration.text).toBe(afterRegistration.text); // text alone cannot see it
+    expect(blockPropsEqual(beforeRegistration, afterRegistration)).toBe(false);
+  });
+
+  it("comparator case 5 — changed block text is not equal (the growing tail always re-parses)", () => {
+    expect(blockPropsEqual(props("tail so f", [1]), props("tail so far", [1]))).toBe(
+      false,
+    );
+  });
+
+  it("comparator case 6 — equal size with different membership compares equal: the documented limit, sound ONLY because the registry is append-only", () => {
+    // {1} -> {2} at equal size is UNREACHABLE in production: the registry is
+    // built by registry.add(n) inside deriveRunSurfaces and never deleted, so
+    // membership cannot change without size changing. The comparator leans on
+    // that invariant instead of paying a per-render set comparison; this case
+    // pins the trade so a future refactor that makes the registry mutable
+    // knows exactly which assumption it breaks.
+    expect(blockPropsEqual(props("Alpha [1].", [1]), props("Alpha [1].", [2]))).toBe(
+      true,
+    );
+  });
+
+  it("comparator case 7 — streaming growth end-to-end: completed blocks are append-only stable and the round-trip invariant holds on the block sequence the renderer consumes", () => {
+    const full = [
+      "# Findings",
+      "",
+      "Solid-state cells are near pilot scale [1].",
+      "",
+      "| Vendor | Status |",
+      "| --- | --- |",
+      "| A | pilot |",
+      "",
+      "```bash",
+      "npm run build",
+      "",
+      "npm test",
+      "```",
+      "",
+      "Closing prose with a late [2] citation.",
+    ].join("\n");
+    let prevBlocks: string[] = [];
+    // Grow the document in 7-char deltas, splitting at every step exactly as
+    // MarkdownBlocks does before rendering.
+    for (let end = 7; end <= full.length; end += 7) {
+      const src = full.slice(0, Math.min(end, full.length));
+      const r = splitWithRoundTrip(src);
+      // Append-only: every previously-completed block is byte-identical at
+      // the same index — the memo can only ever see stable prefixes.
+      for (let i = 0; i < prevBlocks.length; i++) {
+        expect(r.blocks[i]).toBe(prevBlocks[i]);
+        expect(blockPropsEqual(props(r.blocks[i], []), props(prevBlocks[i], []))).toBe(
+          true,
+        );
+      }
+      prevBlocks = r.blocks;
+    }
+    // And the final split reproduces the whole document's content lines.
+    const final = splitWithRoundTrip(full);
+    expect(final.blocks.length).toBeGreaterThan(2);
   });
 });
