@@ -812,6 +812,73 @@ export function ChatThread({
     setMessages((prev) => prev.map((m) => (m.id === id ? patch(m) : m)));
   }
 
+  // ── Rung 2a (D-61, 04-05): rAF delta batching ──────────────────────────────
+  //
+  // Token deltas accumulate in a ref and flush through the existing
+  // patchMessage at most once per animation frame. React 19 already batches the
+  // multiple patchMessage calls dispatched from ONE reader.read() resumption
+  // (the whole frame-dispatch loop runs inside a single task), so the
+  // incremental win here is bounded by deltas-per-second / 60 — which is why
+  // the replay fixture's cadence is pinned at 120/s (04-03), leaving this real
+  // headroom without rigging the verdict.
+  //
+  // cancelFlush is the seam between this buffer and three hard-won contracts
+  // (the disconnect/placeholder behaviour took three rounds to stabilise, R-6):
+  // handleStreamDrop's blank-on-drop (CHAT-08, T-04-20), the error branch's
+  // content-preserving overwrite (T-04-21), and streamRun's finally. It runs on
+  // EVERY terminal path plus unmount (T-04-25), so no pending frame can repaint
+  // partial text after a disconnection or fire against an unmounted tree.
+  const pendingDeltaRef = useRef("");
+  const rafRef = useRef<number | null>(null);
+
+  /** Cancel any scheduled flush and DROP the buffered text. For paths where the
+   *  buffer must not reach the row (a dropped stream) and as cleanup on paths
+   *  where nothing may outlive the stream (finally / unmount). */
+  function cancelFlush() {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    pendingDeltaRef.current = "";
+  }
+
+  /** Synchronously DELIVER the buffered text, then clear the buffer and frame
+   *  (via cancelFlush). For paths that read the row's content right after —
+   *  the error branch — where dropping buffered-but-unpainted deltas would
+   *  misreport "nothing was delivered". */
+  function flushDeltaNow(assistantId: string) {
+    const buffered = pendingDeltaRef.current;
+    cancelFlush();
+    if (buffered) {
+      patchMessage(assistantId, (m) => ({ ...m, content: m.content + buffered }));
+    }
+  }
+
+  function queueDelta(assistantId: string, delta: string) {
+    pendingDeltaRef.current += delta;
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const buffered = pendingDeltaRef.current;
+      pendingDeltaRef.current = "";
+      if (!buffered) return;
+      // D-61 instrument: the paint-span mark starts HERE, with the state write
+      // that causes the commit — see the `token` case for why it moved out of
+      // the arrival path when rung 2a landed.
+      const inst = instrumentRef.current;
+      if (inst && !inst.markPending) {
+        performance.mark(PAINT_START);
+        inst.markPending = true;
+      }
+      patchMessage(assistantId, (m) => ({ ...m, content: m.content + buffered }));
+    });
+  }
+
+  // Unmount cancel (T-04-25): a late frame firing against an unmounted tree is
+  // a console error and a leaked handle, and a route change mid-stream reaches
+  // it by ordinary use. cancelFlush touches refs only (both stable containers),
+  // so the mount-time closure can never be stale — safe to omit from the deps.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => cancelFlush(), []);
+
   /**
    * Replace the local thread with the persisted rows. The optimistic
    * `local-u-*` / `local-a-*` placeholders have fake ids, so DB rows (real
@@ -899,30 +966,25 @@ export function ChatThread({
         break;
       }
       case "token": {
-        // D-61 instrument (04-03): count the delta and mark the START of the
-        // paint it triggers. This is the number that decides whether rung 2 can
-        // help AT ALL — React 19 already batches the multiple patchMessage calls
-        // dispatched from one reader resumption, so rAF's incremental win is
-        // bounded by deltas-per-second divided by 60.
+        // D-61 instrument (04-03): count the delta at ARRIVAL — `deltas` means
+        // "deltas received" and rung 2a must not change what the numerator
+        // counts, or the deltas/commits batching ratio stops meaning anything.
         //
-        // The mark is taken on the FIRST delta of a burst, not each one: a burst
-        // flushed inside one task produces ONE commit, and the honest span is
-        // task-start to paint. Unarmed, this is one null check.
+        // The PAINT_START mark moved INTO the rAF flush when rung 2a landed
+        // (04-05): the measured span is "the task that renders → paint", and
+        // after batching that task is the flush, not the arrival. Marking here
+        // would fold up to a whole frame of idle rAF wait into every commit
+        // sample and corrupt the AFTER numbers against the BEFORE semantics.
+        // Unarmed, this is one null check.
         const inst = instrumentRef.current;
-        if (inst) {
-          inst.deltas += 1;
-          if (!inst.markPending) {
-            performance.mark(PAINT_START);
-            inst.markPending = true;
-          }
-        }
-        // Live-connection streaming UX. If the stream later dies without a
-        // terminal event, handleStreamDrop swaps this half-painted text for
-        // the placeholder — partial text never survives a disconnection.
-        patchMessage(assistantId, (m) => ({
-          ...m,
-          content: m.content + ((data.delta as string) ?? ""),
-        }));
+        if (inst) inst.deltas += 1;
+        // Rung 2a: buffer the delta; the accumulated text flushes through
+        // patchMessage once per animation frame. Frames are still parsed and
+        // dispatched in arrival order — only the number of React commits
+        // changes. If the stream later dies without a terminal event,
+        // handleStreamDrop cancels the buffer FIRST and then blanks the row —
+        // partial text never survives a disconnection.
+        queueDelta(assistantId, (data.delta as string) ?? "");
         break;
       }
       case "tool_status": {
@@ -1008,6 +1070,14 @@ export function ChatThread({
           "The research run failed. Please try again.";
         pendingRef.current = false;
         setPendingAssistantId(null);
+        // Rung 2a, trap 2 (T-04-21): FLUSH — not cancel — before this branch
+        // reads m.content. The branch's intent is "overwrite only when nothing
+        // was delivered", and buffered-but-unpainted deltas WERE delivered: an
+        // unflushed buffer would make m.content read empty when real text
+        // arrived, so the error copy would clobber a delivered answer (the
+        // GW-06 class of defect). Both queued updaters run in order inside one
+        // task, so the flushed append lands before `m.content || msg` reads it.
+        flushDeltaNow(assistantId);
         patchMessage(assistantId, (m) => ({ ...m, content: m.content || msg }));
         break;
       }
@@ -1092,6 +1162,12 @@ export function ChatThread({
       if (!sawTerminalRef.current) await handleStreamDrop(assistantId);
     } finally {
       clearInterval(watchdog);
+      // Rung 2a: no pending frame may outlive the stream that queued it. On the
+      // clean `done` path settleFromDb replaces the whole thread from the DB
+      // (the persisted content supersedes any unflushed tail), and on the drop
+      // paths handleStreamDrop already cancelled — this is the backstop that
+      // makes the property unconditional.
+      cancelFlush();
       streamingRef.current = false;
       setStreamingId(null);
     }
@@ -1106,6 +1182,11 @@ export function ChatThread({
    * while disconnected (the terminal event this tab can no longer receive).
    */
   async function handleStreamDrop(assistantId: string) {
+    // Rung 2a, trap 1 (T-04-20): cancel BEFORE the blanking write below. A
+    // pending frame firing after it would repaint partial text a user is
+    // entitled to believe was discarded — the CHAT-08 contract this function
+    // exists to keep.
+    cancelFlush();
     streamingRef.current = false;
     patchMessage(assistantId, (m) => ({ ...m, content: "" }));
     try {
