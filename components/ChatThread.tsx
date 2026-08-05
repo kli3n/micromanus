@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -459,6 +460,308 @@ function SaturationNotice({
   );
 }
 
+/** The `rate_limited` chooser state — lifted to module scope so MessageRow can
+ *  type its prop without importing anything new. */
+interface SaturationState {
+  assistantId: string;
+  saturatedModelId: string;
+  fallback: string[];
+  lastUserText: string;
+}
+
+/** Stable empty list for MessageRow's internal defaults. A `?? []` in the
+ *  PARENT's prop list would hand every row a fresh identity per render and
+ *  silently defeat memo() — the specific way rung 2c fails while looking done. */
+const NO_TOOLS: ToolStatusEntry[] = [];
+
+interface MessageRowProps {
+  message: ThreadMessage;
+  /** True for a role='tool' row owned by a replay segment: it renders inside
+   *  its assistant block, nothing at its own position (D-25). Computed in the
+   *  parent from the stable ownedToolRows set so no Set crosses the prop
+   *  boundary. */
+  ownedTool: boolean;
+  streaming: boolean;
+  /** m.id === pendingAssistantId (the empty-content check lives inside). */
+  pending: boolean;
+  /** m.id === wedgedAssistantId (GW-02). */
+  wedged: boolean;
+  terminal: boolean;
+  /** toolsByMsg[m.id] / replaySegments.byAssistant.get(m.id) — undefined (a
+   *  stable identity) when absent, defaulted to NO_TOOLS inside the row. */
+  liveTools: ToolStatusEntry[] | undefined;
+  segmentTools: ToolStatusEntry[] | undefined;
+  liveIterations: number;
+  realtimeRun: { iterations: number; startedAt?: string } | null;
+  /** Non-null ONLY for the row the chooser belongs to — the parent narrows it
+   *  so a saturation update re-renders one row, not all of them. */
+  saturation: SaturationState | null;
+  onSwitch: (chosenModelId: string) => void;
+  onCancelSaturation: () => void;
+  exportTitle: string;
+}
+
+/**
+ * Rung 2c (D-61, 04-05): the per-message row, extracted from the inline
+ * `messages.map` JSX and memoized — the first `React.memo` in this codebase
+ * (04-PATTERNS "No Analog Found"), so this establishes the convention: props
+ * are primitives or stable identities ONLY, checked at the call site.
+ *
+ * `deriveRunSurfaces` moved INSIDE so the parent passes only stable inputs; it
+ * is still a SINGLE derivation feeding live and replayed rows alike (the
+ * D-25/26/27 parity contract, R-4/T-04-23) — this changed where it is invoked,
+ * never how many derivations exist. With rung 2b giving `segmentTools` a
+ * stable identity across tokens, a non-streaming row no longer re-renders (or
+ * re-derives, or re-parses its markdown) when a sibling streams.
+ */
+const MessageRow = memo(function MessageRow({
+  message: m,
+  ownedTool,
+  streaming,
+  pending,
+  wedged,
+  terminal,
+  liveTools,
+  segmentTools,
+  liveIterations,
+  realtimeRun,
+  saturation,
+  onSwitch,
+  onCancelSaturation,
+  exportTitle,
+}: MessageRowProps) {
+  // Persisted tool-status rows (reopened tab, D-25). Segment-owned
+  // rows render inside their assistant block (fixed vertical order:
+  // plan card, rail, answer, sources) — nothing at their own
+  // position. Orphan rows (no preceding assistant — defensive) keep
+  // the legacy single-line rendering; kind-discriminated orphans
+  // render nothing (D-52 null fallback).
+  if (m.role === "tool") {
+    if (ownedTool) return null;
+    let entry: ToolStatusEntry | null = null;
+    try {
+      entry = JSON.parse(m.content) as ToolStatusEntry;
+    } catch {
+      entry = null;
+    }
+    if (!entry || entry.kind != null) return null;
+    return (
+      <div className="flex justify-start">
+        <div className="w-full max-w-[92%]">
+          <ToolStatusGroup tools={[{ ...entry, id: entry.id || m.id }]} />
+        </div>
+      </div>
+    );
+  }
+
+  const isUser = m.role === "user";
+  const isPending = pending && m.content.length === 0;
+  // GW-02: the server minted EITHER pendingAssistantId OR this one,
+  // never both — so exactly one of the spinner placeholder and the
+  // wedged notice can render for an empty assistant row.
+  const isWedged = wedged && m.content.length === 0;
+  const isStreaming = streaming;
+  // Live SSE state and replayed rows feed ONE derivation (D-25
+  // parity). They never overlap: Realtime application is suppressed
+  // while this tab owns the run, and settleFromDb clears live tool
+  // state when the persisted rows take over.
+  const {
+    planItems,
+    meter,
+    lines,
+    registry,
+    sources,
+    alsoFound,
+    artifact,
+  } = deriveRunSurfaces(
+    [...(segmentTools ?? NO_TOOLS), ...(liveTools ?? NO_TOOLS)],
+    terminal,
+  );
+  const meterStartedAt = meter?.startedAt ?? realtimeRun?.startedAt;
+  const meterRunning = meter?.state !== "done" && !terminal;
+  const meterNode =
+    meter && meterStartedAt ? (
+      <RunMeter
+        startedAt={meterStartedAt}
+        running={meterRunning}
+        iterations={
+          meterRunning
+            ? Math.max(
+                liveIterations,
+                realtimeRun?.iterations ?? 0,
+                meter.iterations ?? 0,
+              )
+            : (meter.iterations ??
+              Math.max(liveIterations, realtimeRun?.iterations ?? 0))
+        }
+        elapsedMs={meter.elapsedMs}
+      />
+    ) : null;
+  // EC-06: ONE decision drives both the body beneath the degraded
+  // card and the card's own sub-line, so the copy can never claim the
+  // report is below when nothing is. Null means the answer bubble
+  // above already carries that exact text — never that the user lost
+  // the report (D-43's substantive guarantee is preserved).
+  // RC-02: that last sentence only became true when the PRODUCER
+  // started attaching the body to a degraded carrier
+  // (`artifactCarrierPayload`). Until then `artifact.markdown` was
+  // always undefined, so this was always null and the block at [7]
+  // below never rendered in production.
+  const degradedBody =
+    artifact?.state === "degraded"
+      ? degradedBodyToRender({
+          carrierMarkdown: artifact.markdown,
+          answerContent: m.content,
+        })
+      : null;
+  return (
+    <div className={isUser ? "flex justify-end" : "flex justify-start"}>
+      {isUser ? (
+        <div className="max-w-[80%] rounded-[var(--radius)] bg-[var(--accent)] px-[14px] py-[10px] text-[14px] leading-[1.55] text-white">
+          <span className="whitespace-pre-wrap">{m.content}</span>
+        </div>
+      ) : (
+        <div className="flex w-full max-w-[92%] flex-col gap-1">
+          {/* [1] Research plan card (RSCH-01) — absent when the
+              model omitted the block (D-52: renders null). */}
+          <ResearchPlanCard items={planItems} />
+          {/* [2] Run meter + tool-status rail — live SSE lines for
+              the initiating tab (CHAT-06), replayed rows otherwise;
+              one derivation feeds both (D-25). */}
+          <ToolStatusGroup tools={lines} meter={meterNode} />
+          {m.content.length > 0 ? (
+            <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[14px] leading-[1.6] text-[var(--text)]">
+              {/* [3] Answer markdown on the real .chat-markdown
+                  stylesheet (the dead legacy class is deleted).
+                  Citations resolve per-render against the registry —
+                  an [n] streamed before source n registers stays
+                  literal and upgrades on a later delta (RSCH-02). */}
+              <div className="chat-markdown">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkCitations(registry)]}
+                  components={markdownComponents}
+                >
+                  {m.content}
+                </ReactMarkdown>
+                {isStreaming && (
+                  <span className="streaming-cursor" aria-hidden="true" />
+                )}
+              </div>
+            </div>
+          ) : isPending ? (
+            /* Disconnection placeholder: shown only when no live SSE
+               text exists for this run (stream dropped, or a
+               refreshed tab) — the finished thread is pushed whole
+               at terminal status. */
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-[10px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[13px] text-[var(--text-2)]"
+            >
+              <span className="agent-spinner" aria-hidden="true" />
+              Researching — the full answer appears here when the run
+              completes…
+            </div>
+          ) : isWedged ? (
+            /* Wedged-run notice (GW-02). The SAME box as the
+               placeholder above — identical border, surface, padding,
+               text size and line count — so swapping one for the
+               other shifts nothing [BD §8 layout stability]. Three
+               differences only: the spinner element is dropped; the
+               note role replaces status + polite live region (this
+               describes a settled state, it does not announce an
+               update); and the copy. It is STATIC — it never moves,
+               and carries no motion utility of any kind, so nothing
+               here can touch a layout property [BD §5]. It is also
+               the one place a wedged run explains itself: the
+               composer beside it is ENABLED, because the server
+               released the reload-surviving in-flight signal rather
+               than minting it. The glyph sits in a 16px grid cell no taller
+               than the 13px line box, so the row cannot grow. */
+            <div
+              role="note"
+              className="flex items-center gap-[10px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[13px] text-[var(--text-2)]"
+            >
+              <span className="grid h-4 w-4 flex-none place-items-center text-[var(--warning)]">
+                <WarnIcon />
+              </span>
+              This run stopped responding — ask again to continue.
+            </div>
+          ) : null}
+          {saturation && (
+            <SaturationNotice
+              saturatedModelId={saturation.saturatedModelId}
+              fallback={saturation.fallback}
+              onSwitch={onSwitch}
+              onCancel={onCancelSaturation}
+            />
+          )}
+          {/* [4] Export as PDF (D-38) — the always-visible safety
+              net on every TERMINAL assistant answer (never a
+              streaming one): the same PDF via /api/render-pdf even
+              when the model never called the tool, and the retry
+              path for a degraded card. Carries the D-42
+              bibliography from the client-held source registry. */}
+          {terminal && m.content.length > 0 && (
+            <ExportPdfButton
+              title={exportTitle}
+              markdown={m.content}
+              sources={sources
+                .slice(0, 50)
+                .map((s) => ({ n: s.n, title: s.title, url: s.url }))}
+            />
+          )}
+          {/* [5] Sources card — appears once, complete, at terminal
+              state only (D-37; CLS contract). Renders null when the
+              run fetched nothing (D-52). */}
+          {terminal && (
+            <SourcesCard sources={sources} alsoFound={alsoFound} />
+          )}
+          {/* [6] Artifact card (RSCH-03) — only when a report was
+              requested (D-52 absence otherwise). Fixed 72px box;
+              the pending→ready/degraded settle arrives as a
+              messages Realtime UPDATE on the already-subscribed
+              channel AFTER the SSE stream closed, when the
+              initiating-tab suppression flags are already cleared
+              by settleFromDb (D-46 — no new subscription). */}
+          {artifact && (
+            <ArtifactCard
+              artifactId={artifact.artifactId}
+              title={artifact.title}
+              state={artifact.state}
+              bodyBelow={degradedBody !== null}
+            />
+          )}
+          {/* [7] Degraded report body (RSCH-04, D-43) — the user
+              always gets the content, and now EXACTLY ONCE (EC-06).
+              The pre-fix fallback to `m.content` re-rendered the
+              answer bubble's own text a second time beneath the card
+              whenever the carrier had no markdown of its own. The
+              rule returns null in precisely the cases the bubble
+              above already carries the text, and the card's sub-line
+              branches on the SAME value so the copy cannot claim the
+              report is somewhere it is not. */}
+          {artifact?.state === "degraded" && degradedBody !== null && (
+            <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[14px]">
+              <div className="chat-markdown">
+                <ReactMarkdown
+                  remarkPlugins={[
+                    remarkGfm,
+                    remarkCitations(registry),
+                  ]}
+                  components={markdownComponents}
+                >
+                  {degradedBody}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
 export function ChatThread({
   chatId,
   initialMessages,
@@ -513,12 +816,7 @@ export function ChatThread({
   } | null>(initialRunMeter);
   // Saturation-fallback chooser: set on a `rate_limited` SSE event with a
   // non-empty fallback list; drives the inline SaturationNotice.
-  const [saturation, setSaturation] = useState<{
-    assistantId: string;
-    saturatedModelId: string;
-    fallback: string[];
-    lastUserText: string;
-  } | null>(null);
+  const [saturation, setSaturation] = useState<SaturationState | null>(null);
   const streamingRef = useRef(false);
   // A run is "pending" from send until the FULL thread is reconciled from the
   // DB (terminal status). Unlike streamingRef (SSE reader liveness), pending
@@ -693,8 +991,28 @@ export function ChatThread({
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, []);
 
+  // Rung 2d (D-61, 04-05): the NEAR-BOTTOM GUARD state. Sampled on scroll —
+  // user-driven or programmatic — rather than inside the effect below, because
+  // the effect fires AFTER new content grew scrollHeight, so measuring there
+  // would read "not at bottom" the moment a large flush lands and break
+  // auto-follow. Starts true so the initial render still lands at the bottom;
+  // scrollIntoView itself fires a scroll event, which re-samples ~0 and keeps
+  // follow engaged.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const atBottomRef = useRef(true);
+  const onScrollerScroll = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    atBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 64;
+  }, []);
+
   useEffect(() => {
-    scrollToBottom();
+    // Rung 2d: unguarded, this scrollIntoView forced a synchronous layout once
+    // per token AND yanked a reader who had scrolled up back to the bottom
+    // (a real UX bug, not just jank). The near-bottom guard auto-follows only
+    // while the user is already there; scrolling back down resumes it.
+    if (atBottomRef.current) scrollToBottom();
   }, [messages, scrollToBottom]);
 
   // Realtime (CHAT-08). The initiating tab owns the SSE stream and suppresses
@@ -1242,7 +1560,7 @@ export function ChatThread({
   // failed assistant bubble and appends one fresh empty bubble (no new user
   // bubble — the question is unchanged). The saturated run was already refunded
   // server-side; this fresh run debits its own credit (money stays correct).
-  function onSwitch(chosenModelId: string) {
+  function onSwitchImpl(chosenModelId: string) {
     const sat = saturation;
     if (!sat) return;
     setSaturation(null);
@@ -1258,6 +1576,21 @@ export function ChatThread({
       switchModel: true,
     });
   }
+  // Rung 2c: MessageRow's callback props need STABLE identities — a per-render
+  // function in the prop list would defeat memo() on every row. The impl above
+  // reads state (`saturation`, and `streamRun`'s closure over `activeChatId`),
+  // so it is routed through a render-refreshed ref — the SaturationNotice
+  // `selectedRef` house pattern — behind a `useCallback([], …)` trampoline,
+  // which keeps the identity fixed while the behaviour tracks the latest
+  // render (a dep-listed useCallback would go stale on exactly the
+  // `chat_created`-then-`rate_limited` new-chat path).
+  const onSwitchRef = useRef(onSwitchImpl);
+  onSwitchRef.current = onSwitchImpl;
+  const onSwitch = useCallback(
+    (chosenModelId: string) => onSwitchRef.current(chosenModelId),
+    [],
+  );
+  const onCancelSaturation = useCallback(() => setSaturation(null), []);
 
   // Persisted-row replay derivation (D-25 parity, 03-03): associate each
   // role='tool' row with its run's assistant row. The assistant placeholder is
@@ -1267,6 +1600,19 @@ export function ChatThread({
   // then renders plan card, rail, answer, sources in the UI-SPEC fixed
   // vertical order from these payloads, and the tool rows render nothing at
   // their own list positions (they'd otherwise paint BELOW the answer).
+  // Rung 2b (D-61, 04-05): the segmentation below depends only on message
+  // id/role ORDERING plus tool-row content — never on assistant or user
+  // content, which is the part that changes on every token. This signature
+  // captures exactly that dependency, so keying the memo on it stops a
+  // streaming delta from re-walking the whole thread and re-JSON.parsing every
+  // persisted tool row (an O(all tool rows) parse per delta before this fix).
+  // It is also what gives `byAssistant.get(id)` a STABLE identity across
+  // tokens, which rung 2c's memo() on the row requires to fire at all.
+  const segmentKey = messages
+    .map((m) =>
+      m.role === "tool" ? `t:${m.id}:${m.content.length}` : `${m.role[0]}:${m.id}`,
+    )
+    .join("|");
   const replaySegments = useMemo(() => {
     const byAssistant = new Map<string, ToolStatusEntry[]>();
     const ownedToolRows = new Set<string>();
@@ -1294,7 +1640,14 @@ export function ChatThread({
       byAssistant.set(lastAssistantId, list);
     }
     return { byAssistant, ownedToolRows };
-  }, [messages]);
+    // `messages` is deliberately omitted: segmentKey covers every part of it
+    // this body reads (id/role ordering + tool-row content, via its length —
+    // a tool row's payload never mutates in place at constant length), so the
+    // memo re-runs exactly when the segmentation can change instead of once
+    // per token (rung 2b). The body reads the render closure's `messages`,
+    // which is current whenever segmentKey changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segmentKey]);
 
   // Export-as-PDF title (D-38): derived from the chat title, which is the
   // literal first user prompt (CHAT-02) — so the first user message content
@@ -1310,7 +1663,11 @@ export function ChatThread({
   return (
     <div className="flex h-full w-full max-w-[820px] flex-col self-stretch">
       {/* ---- Thread column ---- */}
-      <div className="flex-1 overflow-y-auto px-1 py-4">
+      <div
+        ref={scrollerRef}
+        onScroll={onScrollerScroll}
+        className="flex-1 overflow-y-auto px-1 py-4"
+      >
         {showEmpty && (
           <div className="mx-auto max-w-[460px] py-16 text-center text-[var(--text-3)]">
             <p className="text-[14.5px] leading-[1.6]">
@@ -1320,244 +1677,40 @@ export function ChatThread({
           </div>
         )}
         <div className="flex flex-col gap-4">
-          {messages.map((m) => {
-            // Persisted tool-status rows (reopened tab, D-25). Segment-owned
-            // rows render inside their assistant block (fixed vertical order:
-            // plan card, rail, answer, sources) — nothing at their own
-            // position. Orphan rows (no preceding assistant — defensive) keep
-            // the legacy single-line rendering; kind-discriminated orphans
-            // render nothing (D-52 null fallback).
-            if (m.role === "tool") {
-              if (replaySegments.ownedToolRows.has(m.id)) return null;
-              let entry: ToolStatusEntry | null = null;
-              try {
-                entry = JSON.parse(m.content) as ToolStatusEntry;
-              } catch {
-                entry = null;
+          {messages.map((m) => (
+            // Rung 2c prop discipline (T-04-22): every prop below is a
+            // primitive or a STABLE identity — toolsByMsg[m.id] and
+            // byAssistant.get(m.id) pass through undefined rather than a fresh
+            // `?? []`, no Set and no spread array appears in this list, and
+            // both callbacks are useCallback-stable. Violating any of these
+            // makes the memo a no-op while looking done.
+            <MessageRow
+              key={m.id}
+              message={m}
+              ownedTool={
+                m.role === "tool" && replaySegments.ownedToolRows.has(m.id)
               }
-              if (!entry || entry.kind != null) return null;
-              return (
-                <div key={m.id} className="flex justify-start">
-                  <div className="w-full max-w-[92%]">
-                    <ToolStatusGroup tools={[{ ...entry, id: entry.id || m.id }]} />
-                  </div>
-                </div>
-              );
-            }
-
-            const isUser = m.role === "user";
-            const isPending = m.id === pendingAssistantId && m.content.length === 0;
-            // GW-02: the server minted EITHER pendingAssistantId OR this one,
-            // never both — so exactly one of the spinner placeholder and the
-            // wedged notice can render for an empty assistant row.
-            const isWedged = m.id === wedgedAssistantId && m.content.length === 0;
-            const isStreaming = m.id === streamingId;
-            const liveTools = toolsByMsg[m.id] ?? [];
-            // A run is terminal for this message when this tab neither
-            // streams it nor holds it pending — replayed finished threads
-            // land here (SourcesCard is terminal-only, D-37).
-            const terminal = !isStreaming && m.id !== pendingAssistantId;
-            // Live SSE state and replayed rows feed ONE derivation (D-25
-            // parity). They never overlap: Realtime application is suppressed
-            // while this tab owns the run, and settleFromDb clears live tool
-            // state when the persisted rows take over.
-            const segmentTools = replaySegments.byAssistant.get(m.id) ?? [];
-            const {
-              planItems,
-              meter,
-              lines,
-              registry,
-              sources,
-              alsoFound,
-              artifact,
-            } = deriveRunSurfaces([...segmentTools, ...liveTools], terminal);
-            const meterStartedAt = meter?.startedAt ?? realtimeRun?.startedAt;
-            const meterRunning = meter?.state !== "done" && !terminal;
-            const meterNode =
-              meter && meterStartedAt ? (
-                <RunMeter
-                  startedAt={meterStartedAt}
-                  running={meterRunning}
-                  iterations={
-                    meterRunning
-                      ? Math.max(
-                          liveIterations,
-                          realtimeRun?.iterations ?? 0,
-                          meter.iterations ?? 0,
-                        )
-                      : (meter.iterations ??
-                        Math.max(liveIterations, realtimeRun?.iterations ?? 0))
-                  }
-                  elapsedMs={meter.elapsedMs}
-                />
-              ) : null;
-            // EC-06: ONE decision drives both the body beneath the degraded
-            // card and the card's own sub-line, so the copy can never claim the
-            // report is below when nothing is. Null means the answer bubble
-            // above already carries that exact text — never that the user lost
-            // the report (D-43's substantive guarantee is preserved).
-            // RC-02: that last sentence only became true when the PRODUCER
-            // started attaching the body to a degraded carrier
-            // (`artifactCarrierPayload`). Until then `artifact.markdown` was
-            // always undefined, so this was always null and the block at [7]
-            // below never rendered in production.
-            const degradedBody =
-              artifact?.state === "degraded"
-                ? degradedBodyToRender({
-                    carrierMarkdown: artifact.markdown,
-                    answerContent: m.content,
-                  })
-                : null;
-            return (
-              <div
-                key={m.id}
-                className={isUser ? "flex justify-end" : "flex justify-start"}
-              >
-                {isUser ? (
-                  <div className="max-w-[80%] rounded-[var(--radius)] bg-[var(--accent)] px-[14px] py-[10px] text-[14px] leading-[1.55] text-white">
-                    <span className="whitespace-pre-wrap">{m.content}</span>
-                  </div>
-                ) : (
-                  <div className="flex w-full max-w-[92%] flex-col gap-1">
-                    {/* [1] Research plan card (RSCH-01) — absent when the
-                        model omitted the block (D-52: renders null). */}
-                    <ResearchPlanCard items={planItems} />
-                    {/* [2] Run meter + tool-status rail — live SSE lines for
-                        the initiating tab (CHAT-06), replayed rows otherwise;
-                        one derivation feeds both (D-25). */}
-                    <ToolStatusGroup tools={lines} meter={meterNode} />
-                    {m.content.length > 0 ? (
-                      <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[14px] leading-[1.6] text-[var(--text)]">
-                        {/* [3] Answer markdown on the real .chat-markdown
-                            stylesheet (the dead legacy class is deleted).
-                            Citations resolve per-render against the registry —
-                            an [n] streamed before source n registers stays
-                            literal and upgrades on a later delta (RSCH-02). */}
-                        <div className="chat-markdown">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm, remarkCitations(registry)]}
-                            components={markdownComponents}
-                          >
-                            {m.content}
-                          </ReactMarkdown>
-                          {isStreaming && (
-                            <span className="streaming-cursor" aria-hidden="true" />
-                          )}
-                        </div>
-                      </div>
-                    ) : isPending ? (
-                      /* Disconnection placeholder: shown only when no live SSE
-                         text exists for this run (stream dropped, or a
-                         refreshed tab) — the finished thread is pushed whole
-                         at terminal status. */
-                      <div
-                        role="status"
-                        aria-live="polite"
-                        className="flex items-center gap-[10px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[13px] text-[var(--text-2)]"
-                      >
-                        <span className="agent-spinner" aria-hidden="true" />
-                        Researching — the full answer appears here when the run
-                        completes…
-                      </div>
-                    ) : isWedged ? (
-                      /* Wedged-run notice (GW-02). The SAME box as the
-                         placeholder above — identical border, surface, padding,
-                         text size and line count — so swapping one for the
-                         other shifts nothing [BD §8 layout stability]. Three
-                         differences only: the spinner element is dropped; the
-                         note role replaces status + polite live region (this
-                         describes a settled state, it does not announce an
-                         update); and the copy. It is STATIC — it never moves,
-                         and carries no motion utility of any kind, so nothing
-                         here can touch a layout property [BD §5]. It is also
-                         the one place a wedged run explains itself: the
-                         composer beside it is ENABLED, because the server
-                         released the reload-surviving in-flight signal rather
-                         than minting it. The glyph sits in a 16px grid cell no taller
-                         than the 13px line box, so the row cannot grow. */
-                      <div
-                        role="note"
-                        className="flex items-center gap-[10px] rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[13px] text-[var(--text-2)]"
-                      >
-                        <span className="grid h-4 w-4 flex-none place-items-center text-[var(--warning)]">
-                          <WarnIcon />
-                        </span>
-                        This run stopped responding — ask again to continue.
-                      </div>
-                    ) : null}
-                    {saturation?.assistantId === m.id && (
-                      <SaturationNotice
-                        saturatedModelId={saturation.saturatedModelId}
-                        fallback={saturation.fallback}
-                        onSwitch={onSwitch}
-                        onCancel={() => setSaturation(null)}
-                      />
-                    )}
-                    {/* [4] Export as PDF (D-38) — the always-visible safety
-                        net on every TERMINAL assistant answer (never a
-                        streaming one): the same PDF via /api/render-pdf even
-                        when the model never called the tool, and the retry
-                        path for a degraded card. Carries the D-42
-                        bibliography from the client-held source registry. */}
-                    {terminal && m.content.length > 0 && (
-                      <ExportPdfButton
-                        title={exportTitle}
-                        markdown={m.content}
-                        sources={sources
-                          .slice(0, 50)
-                          .map((s) => ({ n: s.n, title: s.title, url: s.url }))}
-                      />
-                    )}
-                    {/* [5] Sources card — appears once, complete, at terminal
-                        state only (D-37; CLS contract). Renders null when the
-                        run fetched nothing (D-52). */}
-                    {terminal && (
-                      <SourcesCard sources={sources} alsoFound={alsoFound} />
-                    )}
-                    {/* [6] Artifact card (RSCH-03) — only when a report was
-                        requested (D-52 absence otherwise). Fixed 72px box;
-                        the pending→ready/degraded settle arrives as a
-                        messages Realtime UPDATE on the already-subscribed
-                        channel AFTER the SSE stream closed, when the
-                        initiating-tab suppression flags are already cleared
-                        by settleFromDb (D-46 — no new subscription). */}
-                    {artifact && (
-                      <ArtifactCard
-                        artifactId={artifact.artifactId}
-                        title={artifact.title}
-                        state={artifact.state}
-                        bodyBelow={degradedBody !== null}
-                      />
-                    )}
-                    {/* [7] Degraded report body (RSCH-04, D-43) — the user
-                        always gets the content, and now EXACTLY ONCE (EC-06).
-                        The pre-fix fallback to `m.content` re-rendered the
-                        answer bubble's own text a second time beneath the card
-                        whenever the carrier had no markdown of its own. The
-                        rule returns null in precisely the cases the bubble
-                        above already carries the text, and the card's sub-line
-                        branches on the SAME value so the copy cannot claim the
-                        report is somewhere it is not. */}
-                    {artifact?.state === "degraded" && degradedBody !== null && (
-                      <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[14px]">
-                        <div className="chat-markdown">
-                          <ReactMarkdown
-                            remarkPlugins={[
-                              remarkGfm,
-                              remarkCitations(registry),
-                            ]}
-                            components={markdownComponents}
-                          >
-                            {degradedBody}
-                          </ReactMarkdown>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              streaming={m.id === streamingId}
+              pending={m.id === pendingAssistantId}
+              wedged={m.id === wedgedAssistantId}
+              // A run is terminal for this message when this tab neither
+              // streams it nor holds it pending — replayed finished threads
+              // land here (SourcesCard is terminal-only, D-37).
+              terminal={m.id !== streamingId && m.id !== pendingAssistantId}
+              liveTools={toolsByMsg[m.id]}
+              segmentTools={replaySegments.byAssistant.get(m.id)}
+              liveIterations={liveIterations}
+              realtimeRun={realtimeRun}
+              saturation={
+                saturation && saturation.assistantId === m.id
+                  ? saturation
+                  : null
+              }
+              onSwitch={onSwitch}
+              onCancelSaturation={onCancelSaturation}
+              exportTitle={exportTitle}
+            />
+          ))}
         </div>
         <div ref={bottomRef} />
       </div>
