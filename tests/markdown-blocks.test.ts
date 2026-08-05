@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { splitMarkdownBlocks } from "@/components/chat/markdown-blocks";
-import { blockPropsEqual } from "@/components/chat/MarkdownBlocks";
+import {
+  blockPropsEqual,
+  deriveBlockList,
+} from "@/components/chat/MarkdownBlocks";
 
 /**
  * splitMarkdownBlocks (04-03 Task 2) — the fence-aware block splitter that is
@@ -317,7 +320,16 @@ describe("blockPropsEqual (rung-3 memo comparator)", () => {
     );
   });
 
-  it("comparator case 7 — streaming growth end-to-end: completed blocks are append-only stable and the round-trip invariant holds on the block sequence the renderer consumes", () => {
+  it("comparator case 7 — streaming growth end-to-end: the COMPLETED list the renderer consumes is strictly append-only and reproduces the document's content", () => {
+    // deriveBlockList, not the raw splitter output, is what MarkdownBlocks
+    // renders — and the distinction is load-bearing. The raw blocks/tail are
+    // NOT append-only under growth: a delta ending exactly on `\n` leaves a
+    // transient trailing blank line that "completes" a block (a table header
+    // row, say) which the very next delta reabsorbs into the tail. This case
+    // originally consumed the raw split and FAILED on exactly that shape —
+    // the promotion rule in deriveBlockList (a block is completed only once
+    // content exists past its boundary) is the fix, and 1-char growth below
+    // hits every knife-edge cut point to prove it.
     const full = [
       "# Findings",
       "",
@@ -335,24 +347,35 @@ describe("blockPropsEqual (rung-3 memo comparator)", () => {
       "",
       "Closing prose with a late [2] citation.",
     ].join("\n");
-    let prevBlocks: string[] = [];
-    // Grow the document in 7-char deltas, splitting at every step exactly as
-    // MarkdownBlocks does before rendering.
-    for (let end = 7; end <= full.length; end += 7) {
-      const src = full.slice(0, Math.min(end, full.length));
-      const r = splitWithRoundTrip(src);
-      // Append-only: every previously-completed block is byte-identical at
-      // the same index — the memo can only ever see stable prefixes.
-      for (let i = 0; i < prevBlocks.length; i++) {
-        expect(r.blocks[i]).toBe(prevBlocks[i]);
-        expect(blockPropsEqual(props(r.blocks[i], []), props(prevBlocks[i], []))).toBe(
+    let prev: string[] = [];
+    for (let end = 1; end <= full.length; end++) {
+      const src = full.slice(0, end);
+      const { completed, live } = deriveBlockList(src);
+      // Strictly append-only: every previously-completed block is
+      // byte-identical at the same index — the memo only ever sees stable
+      // prefixes, so an index key can never point at changed text.
+      expect(completed.length).toBeGreaterThanOrEqual(prev.length);
+      for (let i = 0; i < prev.length; i++) {
+        expect(completed[i]).toBe(prev[i]);
+        expect(blockPropsEqual(props(completed[i], []), props(prev[i], []))).toBe(
           true,
         );
       }
-      prevBlocks = r.blocks;
+      // Round-trip: completed + live carry the source's content lines
+      // unchanged (the 04-03 invariant, now on the rendered sequence).
+      const nonBlank = (s: string) =>
+        s.split("\n").filter((l) => l.trim() !== "");
+      expect(nonBlank([...completed, live].join("\n"))).toEqual(nonBlank(src));
+      prev = completed;
     }
-    // And the final split reproduces the whole document's content lines.
-    const final = splitWithRoundTrip(full);
-    expect(final.blocks.length).toBeGreaterThan(2);
+    // The full document really did decompose into multiple memoized blocks
+    // plus a live one — the O(n) shape, not one giant block.
+    const final = deriveBlockList(full);
+    expect(final.completed.length).toBeGreaterThan(2);
+    expect(final.live).toBe("Closing prose with a late [2] citation.");
+    // And the fence never leaked across the completed/live boundary.
+    expect(
+      final.completed.filter((b) => b.includes("```")),
+    ).toEqual(["```bash\nnpm run build\n\nnpm test\n```"]);
   });
 });

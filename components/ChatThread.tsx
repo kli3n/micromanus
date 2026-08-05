@@ -26,6 +26,7 @@ import { RunMeter } from "@/components/chat/RunMeter";
 import { ArtifactCard } from "@/components/chat/ArtifactCard";
 import { ExportPdfButton } from "@/components/chat/ExportPdfButton";
 import { degradedBodyToRender, toolLineParts } from "@/components/chat/render-rules";
+import { MarkdownBlocks } from "@/components/chat/MarkdownBlocks";
 import {
   deriveRunSurfaces,
   type ToolStatusEntry,
@@ -635,14 +636,18 @@ const MessageRow = memo(function MessageRow({
                   stylesheet (the dead legacy class is deleted).
                   Citations resolve per-render against the registry —
                   an [n] streamed before source n registers stays
-                  literal and upgrades on a later delta (RSCH-02). */}
+                  literal and upgrades on a later delta (RSCH-02).
+                  D-61 rung 3 (04-07): rendered through MarkdownBlocks —
+                  completed blocks are memoized on text + registry.size
+                  and only the growing tail re-parses (O(n), not O(n²));
+                  the pipeline inside is byte-for-byte the same two
+                  remark plugins and this module-level markdownComponents. */}
               <div className="chat-markdown">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkCitations(registry)]}
+                <MarkdownBlocks
+                  text={m.content}
+                  registry={registry}
                   components={markdownComponents}
-                >
-                  {m.content}
-                </ReactMarkdown>
+                />
                 {isStreaming && (
                   <span className="streaming-cursor" aria-hidden="true" />
                 )}
