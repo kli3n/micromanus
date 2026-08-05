@@ -52,17 +52,25 @@ const SCAN_DIRS = ['app', 'components'] as const;
 
 /**
  * Media queries that MUST be present in the built CSS today.
- * Tailwind v4 emits breakpoints in rem: `sm` = 40rem.
+ * Tailwind v4 emits breakpoints in rem: `sm` = 40rem; `lg` = 64rem — the
+ * drawer breakpoint, promoted from PENDING_MEDIA by plan 04-06 (D-68) when
+ * the drawer landed. NOTE: the media-presence check alone is coarse (Tailwind
+ * also emits `(min-width:64rem)` for the `.container` ramp); the per-class
+ * assertion over every derived `lg:` utility is what actually proves the
+ * drawer's grid change compiled.
  */
-const REQUIRED_MEDIA = ['@media (min-width:40rem)'] as const;
+const REQUIRED_MEDIA = [
+  '@media (min-width:40rem)',
+  '@media (min-width:64rem)',
+] as const;
 
 /**
  * Media queries that are the TARGET but not yet emitted. Reported as
- * informational so this plan's gate is green while still recording the goal.
- * Plan 04-06 (the mobile drawer, D-68) promotes `@media (min-width:64rem)`
- * (Tailwind v4 `lg`) into REQUIRED_MEDIA once the drawer lands.
+ * informational so the gate stays green while still recording the goal.
+ * Empty since plan 04-06 promoted the `lg` drawer breakpoint into
+ * REQUIRED_MEDIA.
  */
-const PENDING_MEDIA = ['@media (min-width:64rem)'] as const;
+const PENDING_MEDIA: readonly string[] = [];
 
 /**
  * Genuine false positives: tokens this file's extractor reads as a utility that
@@ -398,7 +406,7 @@ function auditDerived(hay: Haystack): void {
     const seen = hay.compact.includes(needle);
     console.log(
       `  INFO: pending media query '${q}' ${seen ? 'IS' : 'is not yet'} emitted ` +
-        `(plan 04-06 promotes this to a hard assertion once the drawer lands)`,
+        `(the owning plan promotes this to a hard assertion once its feature lands)`,
     );
   }
 }
