@@ -53,31 +53,17 @@
     },
     {
       "file": "app/page.tsx",
-      "value": "#FDF2EA",
-      "class": "demo-verbatim",
-      "justification": "Landing hero radial wash, inner stop. Plan 04-01 (following 04-RESEARCH Pitfall 1 class 3) predicted this was a genuine stray to be converted by 04-13; the mandated provenance check contradicts that — it is present verbatim in landing.html and auth-error.html, both tracked since 2026-07-21. Reclassified to demo-verbatim per the plan's explicit 'if provenance turns up, reclassify' rule. If 04-13 converts it anyway, this entry must be deleted in the same commit or the gate reports it stale.",
-      "provenance": "design/screens/*.html x2 (landing.html x1, auth-error.html x1); design/foundations.html x0."
-    },
-    {
-      "file": "app/page.tsx",
-      "value": "rgba(253,242,234,0)",
-      "class": "demo-verbatim",
-      "justification": "Landing hero radial wash, transparent outer stop — the alpha-0 form of #FDF2EA above, required because a gradient stop cannot fade to `transparent` consistently across engines. Same mockup provenance as its paired inner stop.",
-      "provenance": "design/screens/*.html x2 (landing.html x1, auth-error.html x1); design/foundations.html x0."
-    },
-    {
-      "file": "app/page.tsx",
       "value": "#E0742E",
       "class": "demo-verbatim",
-      "justification": "Landing logo-mark gradient end stop, paired with `var(--accent)` as the start stop. An accent-derived gradient partner, taken from the approved mockups rather than invented.",
-      "provenance": "design/screens/*.html x10 (02-phase2-demos x2, 03-phase3-demos x2, 04-phase4-demos x3, app-shell x1, auth-error x1, landing x1); design/foundations.html x0. Matches the count 04-RESEARCH measured."
+      "justification": "Landing logo-mark gradient end stop, paired with `var(--accent)` as the start stop. An accent-derived gradient partner, taken from the approved mockups rather than invented. Survives the 04-13 hero rebuild: the mark moved from the sign-in card into the D-63 nav bar, but it is the same mark and the same approved gradient (04-phase4-demos.html `.mark`).",
+      "provenance": "design/screens/*.html x10 (02-phase2-demos x2, 03-phase3-demos x2, 04-phase4-demos x3, app-shell x1, auth-error x1, landing x1); design/foundations.html x0. Re-measured at plan 04-13 against the APPROVED hero panel — unchanged."
     },
     {
       "file": "app/page.tsx",
       "value": "rgba(194,65,12,.28)",
       "class": "demo-verbatim",
-      "justification": "Landing logo-mark glow — `--accent` (#c2410c) decomposed to rgb + alpha because a CSS box-shadow colour cannot take an alpha applied to a hex custom property without color-mix(). T-2: allowlisted rather than given a new --shadow-accent token, so the UI-SPEC's 'exactly one new token (--scrim)' budget stands.",
-      "provenance": "design/screens/*.html x6; design/foundations.html x0. Matches the count 04-RESEARCH measured."
+      "justification": "Landing logo-mark glow — `--accent` (#c2410c) decomposed to rgb + alpha because a CSS box-shadow colour cannot take an alpha applied to a hex custom property without color-mix(). T-2: allowlisted rather than given a new --shadow-accent token, so the UI-SPEC's 'exactly one new token (--scrim)' budget stands. The 04-13 hero rebuild takes the approved nav mark's `0 3px 9px` geometry; the COLOUR value this entry legitimises is unchanged.",
+      "provenance": "design/screens/*.html x6 (02-phase2-demos x1, 03-phase3-demos x1, 04-phase4-demos x1, app-shell x1, auth-error x1, landing x1); design/foundations.html x0. Re-measured at plan 04-13 — unchanged."
     },
     {
       "file": "components/AppShell.tsx",
