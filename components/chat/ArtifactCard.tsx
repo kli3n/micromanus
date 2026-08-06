@@ -330,12 +330,16 @@ export function ArtifactCard({
             >
               <span className="grid h-[13px] w-[13px] flex-none place-items-center">
                 {busy ? (
+                  /* Spinner ring: white at 45% via color-mix over the accent
+                     button — the one former raw rgba() with zero mockup
+                     provenance, converted by 04-11 (SC-1); no new token
+                     spent on a 12px transient spinner. */
                   <span
                     className="agent-spinner"
                     style={{
                       width: 12,
                       height: 12,
-                      borderColor: "rgba(255,255,255,.45)",
+                      borderColor: "color-mix(in srgb, white 45%, transparent)",
                       borderTopColor: "white",
                     }}
                     aria-hidden="true"

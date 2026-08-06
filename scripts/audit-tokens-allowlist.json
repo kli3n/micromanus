@@ -111,8 +111,8 @@
       "file": "components/AppShell.tsx",
       "value": "#B08B62",
       "class": "demo-verbatim",
-      "justification": "Avatar initials-disc gradient end stop, the pair of #8B6D4E above. Same mockup provenance and same rationale.",
-      "provenance": "design/screens/*.html x7 (02-phase2-demos x2, 03-phase3-demos x2, 04-phase4-demos x2, app-shell x1); design/foundations.html x0."
+      "justification": "Avatar initials-disc gradient end stop, the pair of #8B6D4E above. Same mockup provenance and same rationale. This was the one gradient stop 04-RESEARCH's provenance sweep did not measure; plan 04-11 measured it directly and the counts below are that session's evidence, not an inference from its pair.",
+      "provenance": "design/screens/*.html x7 (02-phase2-demos x2, 03-phase3-demos x2, 04-phase4-demos x2, app-shell x1); design/foundations.html x0. Re-measured at plan 04-11: grep -c -F '#B08B62' confirms 2/2/2/1 across those four files and 0 in landing.html, auth-error.html and foundations.html."
     },
     {
       "file": "components/AppShell.tsx",
@@ -134,14 +134,6 @@
       "class": "demo-verbatim",
       "justification": "Settled artifact-card tint, the top stop of `linear-gradient(180deg,#FFF9F5,var(--surface))`. Plan 04-01 predicted a stray to be converted by 04-11; the provenance check contradicts that, and the source line already carries the comment 'ported verbatim from the approved demo and has no token equivalent (UI-SPEC section 6)' — two independent confirmations of demo-verbatim. Reclassified per the plan's 'if provenance turns up, reclassify' rule.",
       "provenance": "design/screens/*.html x3 (02-phase2-demos x1 — tracked before this phase, 03-phase3-demos x1, 04-phase4-demos x1); design/foundations.html x0."
-    },
-    {
-      "file": "components/chat/ArtifactCard.tsx",
-      "value": "rgba(255,255,255,.45)",
-      "class": "pending-conversion",
-      "justification": "The pending-spinner ring border on the artifact card's PDF button. A genuine stray: zero mockup provenance and no accent derivation — it is white at 45% alpha, invented at implementation time. The paired borderTopColor on the next line is the plain keyword `white`, which is what makes the mismatch visible. Plan 04-11 owns the artifact card and converts it (a token, or a `color-mix(in srgb, white 45%, transparent)` if a token is not budgeted) and must delete this entry in the same commit.",
-      "provenance": "design/screens/*.html x0; design/foundations.html x0 — the only value in the 21-occurrence inventory with no provenance anywhere.",
-      "fixed_by": "04-11"
     },
     {
       "file": "components/ChatThread.tsx",
