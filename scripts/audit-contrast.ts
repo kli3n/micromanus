@@ -111,61 +111,13 @@ interface KnownPair {
  * This is a baseline, not an exemption: every entry is a debt with a due date,
  * and because a stale entry fails the gate, the debt cannot be quietly rolled
  * forward. Populated from a measured run at plan 04-02, never by guesswork.
+ *
+ * EMPTY since plan 04-11 closed all six baselined co-occurrences (the three
+ * --warning/--warning-soft sites and the three same-element AppShell hover
+ * pairs) and deleted their entries in the same commits, per this gate's own
+ * contract. Any future hit therefore fails immediately — the intended state.
  */
-const KNOWN_PAIRS: readonly KnownPair[] = [
-  {
-    file: 'components/BalanceBadge.tsx',
-    fg: '--warning',
-    bg: '--warning-soft',
-    count: 1,
-    reason:
-      'REAL text violation. The zero-balance D-21 pill puts border-[var(--warning-border)] ' +
-      'bg-[var(--warning-soft)] text-[var(--warning)] on one span, so the credit count reads ' +
-      'at 2.92:1. Remedy per tests/contrast.test.ts: keep --warning for the dot glyph against ' +
-      'the surface and move the words to --text-2 (5.16:1). 04-11 names this as "the ' +
-      'zero-credit balance badge".',
-    fixed_by: '04-11',
-  },
-  {
-    file: 'components/ChatThread.tsx',
-    fg: '--warning',
-    bg: '--warning-soft',
-    count: 1,
-    reason:
-      'REAL text violation, and the one on the demo path — the out-of-credits composer notice ' +
-      '(role="note") sets bg-[var(--warning-soft)] with text-[var(--warning)] at 13px/550 on ' +
-      'the same div, so the words a blocked reviewer must read sit at 2.92:1. The copy is ' +
-      'byte-pinned: 04-11 must change the classes and never the string.',
-    fixed_by: '04-11',
-  },
-  {
-    file: 'components/chat/ArtifactCard.tsx',
-    fg: '--warning',
-    bg: '--warning-soft',
-    count: 1,
-    reason:
-      'REAL, but a NON-TEXT violation: the degraded 40x40 icon tile colours a <WarnTileIcon /> ' +
-      'glyph via currentColor, not words. It still fails, because 2.92:1 is below even the 3:1 ' +
-      'WCAG 1.4.11 bar — which is why RESEARCH conclusion 4 says to pair the warning glyph ' +
-      'against the surface (3.30:1) rather than against its own soft fill.',
-    fixed_by: '04-11',
-  },
-  {
-    file: 'components/AppShell.tsx',
-    fg: '--accent',
-    bg: '--surface-3',
-    count: 3,
-    reason:
-      'REAL, and three sites in one file: the Settings nav link, the Stats nav link and the ' +
-      'sign-out button each carry hover:bg-[var(--surface-3)] + hover:text-[var(--accent)] on ' +
-      'the same element, so both halves are genuinely live together at 4.36:1. Remedy: ' +
-      'hover:text-[var(--accent-hover)] (6.22:1). Worth noting because axe evaluates the ' +
-      'RESTING state only and cannot see this pair at all — a same-element hover pair is the ' +
-      'one slice of :hover contrast a source scan CAN prove, so this entry is load-bearing ' +
-      'evidence rather than a duplicate of the Lighthouse gate.',
-    fixed_by: '04-11',
-  },
-];
+const KNOWN_PAIRS: readonly KnownPair[] = [];
 
 // ---------------------------------------------------------------------------
 // JSX opening-tag attribute spans.

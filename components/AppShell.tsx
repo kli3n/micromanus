@@ -119,6 +119,7 @@ function SidebarContent({
           style={{ boxShadow: "0 2px 8px rgba(194,65,12,.22)" }}
         >
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -139,6 +140,7 @@ function SidebarContent({
           className="flex h-[40px] w-full cursor-not-allowed items-center gap-[9px] rounded-[var(--radius)] border border-dashed border-[var(--border-strong)] bg-transparent px-3 text-[13.5px] font-[550] text-[var(--text-2)] opacity-[.85]"
         >
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -150,7 +152,7 @@ function SidebarContent({
             <path d="M12 5v14M5 12h14" />
           </svg>
           New research chat
-          <span className="ml-auto rounded-[20px] bg-[var(--surface-3)] px-[6px] py-[2px] text-[10px] font-[600] tracking-[.02em] text-[var(--text-3)]">
+          <span className="ml-auto rounded-[20px] bg-[var(--surface-3)] px-[6px] py-[2px] text-[10px] font-[600] tracking-[.02em] text-[var(--text-2)]">
             0 credits
           </span>
         </button>
@@ -159,11 +161,17 @@ function SidebarContent({
       {/* Nav-mini (UI-SPEC Component Inventory) — keeps Settings + Stats
           reachable from every authenticated screen. */}
       <nav className="mt-3 flex flex-col gap-0.5">
+        {/* Hover text is --accent-hover, not --accent: --accent on the
+            --surface-3 hover fill measures 4.36:1 (fails AA text) and axe
+            cannot see it — resting-state only. The pinned matrix
+            (tests/contrast.test.ts) is the authority: --accent-hover on
+            --surface-3 is 6.22:1. Same rule at all three hover sites. */}
         <a
           href="/app/settings"
-          className="flex items-center gap-[9px] rounded-[var(--radius-sm)] px-3 py-[7px] text-[13px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--accent)]"
+          className="flex items-center gap-[9px] rounded-[var(--radius-sm)] px-3 py-[7px] text-[13px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--accent-hover)]"
         >
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -179,9 +187,10 @@ function SidebarContent({
         </a>
         <a
           href="/app/stats"
-          className="flex items-center gap-[9px] rounded-[var(--radius-sm)] px-3 py-[7px] text-[13px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--accent)]"
+          className="flex items-center gap-[9px] rounded-[var(--radius-sm)] px-3 py-[7px] text-[13px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--accent-hover)]"
         >
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -197,7 +206,7 @@ function SidebarContent({
         </a>
       </nav>
 
-      <div className="p-[20px_10px_8px] text-[11px] font-[600] uppercase tracking-[.06em] text-[var(--text-3)]">
+      <div className="p-[20px_10px_8px] text-[11px] font-[600] uppercase tracking-[.06em] text-[var(--text-2)]">
         Chats
       </div>
       {chats.length > 0 ? (
@@ -214,8 +223,9 @@ function SidebarContent({
           ))}
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-[var(--text-3)]">
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-[var(--text-2)]">
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -245,7 +255,7 @@ function SidebarContent({
           <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-[600]">
             {displayName}
           </div>
-          <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[11.5px] text-[var(--text-3)]">
+          <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[11.5px] text-[var(--text-2)]">
             {email}
           </div>
         </div>
@@ -254,10 +264,11 @@ function SidebarContent({
           <button
             type="submit"
             title="Sign out"
-            aria-label="Sign out"
-            className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[8px] border border-transparent bg-transparent text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--accent)]"
+            aria-label={`Sign out ${email} — ends this session and returns to the sign-in page`}
+            className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[8px] border border-transparent bg-transparent text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--accent-hover)]"
           >
             <svg
+              aria-hidden="true"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -357,7 +368,7 @@ export async function AppShell({
           <NavDrawerToggle className="lg:hidden" />
           <div className="text-[14.5px] font-[600] tracking-[-0.01em]">
             Workspace{" "}
-            <span className="font-[500] text-[var(--text-3)]">
+            <span className="font-[500] text-[var(--text-2)]">
               / Getting started
             </span>
           </div>

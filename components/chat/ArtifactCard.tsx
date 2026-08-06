@@ -262,11 +262,15 @@ export function ArtifactCard({
         }
         style={{ opacity: snapped ? 0 : 1 }}
       >
-        {/* 40×40 icon tile */}
+        {/* 40×40 icon tile. Degraded contrast (04-11): the warning glyph pairs
+            against --surface (3.30:1 ≥ the 3:1 non-text bar) — on its own soft
+            fill it would measure 2.92:1 (RESEARCH Color math conclusion 4), so
+            the tile face is the surface and the warning hue stays on the glyph
+            and the border. */}
         <div
           className={`grid h-[40px] w-[40px] flex-none place-items-center rounded-[10px] border ${
             degraded
-              ? "border-[var(--warning-border)] bg-[var(--warning-soft)] text-[var(--warning)]"
+              ? "border-[var(--warning-border)] bg-[var(--surface)] text-[var(--warning)]"
               : "border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]"
           }`}
         >
@@ -284,9 +288,11 @@ export function ArtifactCard({
         </div>
 
         <div className="min-w-0 flex-1">
+          {/* Degraded title reads at --text-2 (5.16:1 on --warning-soft) —
+              --warning as TEXT fails 4.5:1 on every surface (04-11). */}
           <div
             className={`truncate text-[13.5px] font-[650] ${
-              degraded ? "text-[var(--warning)]" : "text-[var(--text)]"
+              degraded ? "text-[var(--text-2)]" : "text-[var(--text)]"
             }`}
           >
             {titleText}
@@ -299,9 +305,12 @@ export function ArtifactCard({
         {/* Download failure is inline next to the button — the card itself
             never changes state on a download error (D-39). */}
         {failed && (
+          /* --text-2, not --warning: warning-as-text fails AA on every
+             surface (RESEARCH conclusion 4); role="alert" carries the
+             urgency for assistive tech (04-11). */
           <span
             role="alert"
-            className="flex-none text-[11.5px] text-[var(--warning)]"
+            className="flex-none text-[11.5px] text-[var(--text-2)]"
           >
             Download failed — try again.
           </span>

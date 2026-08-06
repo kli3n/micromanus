@@ -489,8 +489,11 @@ function SaturationNotice({
       role="alert"
       className="flex min-h-[132px] flex-col gap-[10px] rounded-[var(--radius)] border border-[var(--warning-border)] bg-[var(--warning-soft)] px-[14px] py-[12px] text-[13px] text-[var(--text-2)]"
     >
-      <div className="flex items-start gap-[8px] text-[var(--warning)]">
-        <span className="mt-[1px] flex-none">
+      {/* Contrast (04-11): the warning glyph pairs against --surface (3.30:1
+          ≥ the 3:1 non-text bar) via its own chip — on the soft fill it would
+          measure 2.92:1 (RESEARCH Color math conclusion 4). */}
+      <div className="flex items-start gap-[8px]">
+        <span className="mt-[1px] grid h-6 w-6 flex-none place-items-center rounded-full bg-[var(--surface)] text-[var(--warning)]">
           <WarnIcon />
         </span>
         <span className="font-[550] leading-[1.5] text-[var(--text)]">
@@ -1849,11 +1852,19 @@ export function ChatThread({
         </div>
 
         {balance <= 0 ? (
+          /* Out-of-credits notice (locked D-18 copy — classes only, never the
+             string). Contrast (04-11): --warning on --warning-soft is 2.92:1,
+             failing AA text AND the 3:1 non-text bar, so the words use
+             --text-2 (5.16:1 on the soft fill) and the warning hue stays on
+             the border + the glyph — the glyph paired against --surface
+             (3.30:1 ≥ 3:1) via its own chip, never against the soft fill. */
           <div
             role="note"
-            className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--warning-border)] bg-[var(--warning-soft)] px-[14px] py-[12px] text-[13px] font-[550] text-[var(--warning)]"
+            className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--warning-border)] bg-[var(--warning-soft)] px-[14px] py-[12px] text-[13px] font-[550] text-[var(--text-2)]"
           >
-            <WarnIcon />
+            <span className="grid h-6 w-6 flex-none place-items-center rounded-full bg-[var(--surface)] text-[var(--warning)]">
+              <WarnIcon />
+            </span>
             <span>
               Credits exhausted, please recharge{" "}
               <a
