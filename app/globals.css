@@ -172,15 +172,41 @@ body {
 .chat-markdown p:last-child {
   margin-bottom: 0;
 }
-/* Models emit ## freely; h1/h2 normalize to the 15.5px h3 treatment — a 32px
-   browser-default h1 inside a chat bubble is a visual break. */
+/* Models emit # and ## freely; h1/h2 both normalize to the 17px in-prose h2
+   slot (D-67 heading hierarchy). The normalisation itself is load-bearing — a
+   32px browser-default h1 inside a chat bubble is a visual break — so h1 can
+   never render at preflight scale; it just lands on 17px now instead of 15.5px.
+   h3 keeps the 15.5px treatment for a second visible level. */
 .chat-markdown h1,
-.chat-markdown h2,
+.chat-markdown h2 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 20px 0 8px;
+  letter-spacing: -0.01em;
+}
+.chat-markdown h1:first-child,
+.chat-markdown h2:first-child {
+  margin-top: 0;
+}
 .chat-markdown h3 {
   font-size: 15.5px;
   font-weight: 600;
   margin: 16px 0 8px;
   letter-spacing: -0.01em;
+}
+/* Rhythm (D-67): a paragraph or list directly under a heading keeps only the
+   heading's 8px bottom margin — no stacked top margin, so the space under a
+   heading reads tight rather than doubled. */
+.chat-markdown h1 + p,
+.chat-markdown h2 + p,
+.chat-markdown h3 + p,
+.chat-markdown h1 + ul,
+.chat-markdown h2 + ul,
+.chat-markdown h3 + ul,
+.chat-markdown h1 + ol,
+.chat-markdown h2 + ol,
+.chat-markdown h3 + ol {
+  margin-top: 0;
 }
 .chat-markdown ul,
 .chat-markdown ol {
@@ -245,6 +271,14 @@ body {
   padding-left: 12px;
   border-left: 2px solid var(--border-strong);
   color: var(--text-2);
+}
+/* Horizontal rule (D-67): models emit `---` constantly and it previously fell
+   through to browser/preflight defaults — the single most visible unstyled
+   element in a long answer. A 1px token line on a 16px vertical rhythm. */
+.chat-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
 }
 
 /* Inline citation markers (RSCH-02 / D-35). Verbatim from 03-UI-SPEC § [3].
