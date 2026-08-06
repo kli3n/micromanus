@@ -268,7 +268,7 @@
   .land{height:100%;overflow:auto;background:var(--bg)}
   .land-nav{height:60px;display:flex;align-items:center;gap:12px;padding:0 32px;border-bottom:1px solid var(--border);
     background:var(--surface)}
-  .land-nav .wordmark{font-size:15px}
+  .land-nav .wordmark{font-size:15.5px}
   .land-nav .navlinks{margin-left:auto;display:flex;gap:22px;align-items:center}
   .land-nav .navlinks a{font-size:13px;color:var(--text-2);text-decoration:none;font-weight:550}
   .land-nav .navlinks a:hover{color:var(--text)}
@@ -276,7 +276,10 @@
   .hero{padding:56px 32px 48px;max-width:1000px;margin:0 auto}
   .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.05em;
     text-transform:uppercase;color:var(--text-2);margin-bottom:20px}
-  .eyebrow .pip{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+  /* Pip is decorative (aria-hidden) and NOT an accent site — the hero's accent
+     budget is brand mark + primary CTA + one supporting element, and the
+     headline's <em> is that one supporting element (04-13 D-63 amendment). */
+  .eyebrow .pip{width:5px;height:5px;border-radius:50%;background:var(--text-3);flex:0 0 auto}
   h1.hero-h{font-size:38px;line-height:1.14;font-weight:650;letter-spacing:-.025em;margin:0 0 18px;
     max-width:20ch;text-wrap:balance}
   h1.hero-h em{font-style:normal;color:var(--accent)}
@@ -399,10 +402,15 @@
     <section class="screen active" id="s1" role="tabpanel" aria-labelledby="t1">
       <div class="note">
         <h2>Landing hero</h2>
-        <span class="did">D-62</span><span class="did">D-63 · needs your approval</span>
+        <span class="did">D-62</span><span class="did">D-63 · APPROVED 2026-08-06</span>
         <p>The only surface in Phase 4 with no prior mockup, so it is the one thing that genuinely needs
-        sign-off rather than review. Text/CSS hero — the headline is the LCP, no image. Accent appears
-        exactly three times (brand mark, eyebrow pip, primary button), holding the 60/30/10 split.
+        sign-off rather than review. Text/CSS hero — the headline is the LCP, <b style="color:var(--chrome-text)">no
+        image anywhere in this panel</b>, so no preload / <code>fetchpriority</code> obligation arises.
+        Accent appears exactly three times — <b style="color:var(--chrome-text)">brand mark, the headline's
+        <em style="font-style:normal">its bill</em>, and the primary button</b> — holding the 60/30/10 split and
+        the contract's budget of mark + primary CTA + one supporting element. The eyebrow pip was the
+        drafted fourth accent site and was demoted to <code>--text-3</code> at approval; the headline
+        <code>&lt;em&gt;</code> is the one supporting element that stays, because it carries the concept.
         Headline is 38px from the new hero-only 32–40px band; everything else is the existing scale.</p>
       </div>
 
@@ -412,9 +420,12 @@
           <div class="land-nav">
             <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
             <span class="wordmark">MicroManus</span>
+            <!-- One nav link only: it is the one that resolves (#how exists in
+                 this page). The drafted "What it costs" pointed at a #pricing
+                 section that does not exist and is not in scope (04-13 D-63
+                 amendment) — a dead in-page link on the first impression. -->
             <span class="navlinks">
               <a href="#how">How it works</a>
-              <a href="#pricing">What it costs</a>
             </span>
           </div>
 
@@ -474,6 +485,33 @@
         "Continue with GitHub / Google" are the locked OAuth strings, restyled only.</p>
       </div>
 
+      <div class="note">
+        <p><b style="color:var(--chrome-text)">D-63 APPROVAL RECORD.</b>
+        <b style="color:var(--chrome-text)">Approved by:</b> the project owner (human operator).
+        <b style="color:var(--chrome-text)">Date:</b> 2026-08-06.
+        <b style="color:var(--chrome-text)">Decision:</b> <i>approve-with-changes</i> — this panel, as
+        corrected by the T-5 pass (the subhead snapped down one step onto the closed size set, the OAuth
+        button height snapped onto the 44–46px button constant, and the coupon promise deleted — the
+        superseded values are in the 04-13 commit diff, deliberately not restated here so the phase's
+        off-set-value greps stay at zero) <b style="color:var(--chrome-text)">plus three named changes
+        applied before approval took
+        effect</b>: (1) the eyebrow pip's accent dropped so the accent budget is three sites — brand mark,
+        primary CTA, and the headline's <code>&lt;em&gt;</code> as the one supporting element, which was
+        explicitly kept because it carries the concept; (2) the two remaining off-set 15px font sizes —
+        the phone <code>.hero-sub</code> override and <code>.land-nav .wordmark</code> — snapped to 15.5px,
+        a member of the closed size set (15px is not); (3) the dead "What it costs" nav link removed, since
+        it targeted a <code>#pricing</code> section that does not exist and building one would be scope
+        creep. The headline "Research that shows its work — and <i>its bill</i>." is approved
+        <b style="color:var(--chrome-text)">unchanged</b> at 38px / weight 650.
+        <b style="color:var(--chrome-text)">Copy read against the contract:</b> names the deep-research
+        agent, the bring-your-own-key model and the metered costs; makes no card-payment claim (ADR 0001),
+        no team claim, and no coupon promise.
+        <b style="color:var(--chrome-text)">Image:</b> none — the hero is text-and-CSS, zero
+        <code>&lt;img&gt;</code>/<code>&lt;picture&gt;</code>/<code>&lt;video&gt;</code>, so the LCP is the
+        38px headline and the implementation must preserve that (no image hero may be introduced).
+        This panel is now the top of the source-of-truth chain for <code>app/page.tsx</code>.</p>
+      </div>
+
       <div class="phones">
         <div class="phonewrap">
           <div class="phonelabel"><b>390×844 fold check</b><br />backstop E4 / populated</div>
@@ -487,7 +525,7 @@
                 <div class="hero" style="padding:34px 20px 30px">
                   <span class="eyebrow" style="margin-bottom:14px"><span class="pip" aria-hidden="true"></span> Deep-research agent</span>
                   <h1 class="hero-h" style="font-size:32px;max-width:none;margin-bottom:14px">Research that shows its work — and <em>its bill</em>.</h1>
-                  <p class="hero-sub" style="font-size:15px;margin-bottom:24px">MicroManus browses the open web, cites every claim, and exports a PDF. <strong>You bring your own model key</strong> — every call is metered to the cent.</p>
+                  <p class="hero-sub" style="font-size:15.5px;margin-bottom:24px">MicroManus browses the open web, cites every claim, and exports a PDF. <strong>You bring your own model key</strong> — every call is metered to the cent.</p>
                   <div class="oauth" style="flex-direction:column;gap:10px;margin-bottom:14px">
                     <button class="btn-oauth pri ringnew" type="button" style="width:100%;justify-content:center">
                       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.57 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.05 0-1.12.39-2.03 1.03-2.75-.11-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.21 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.92-2.34 4.78-4.57 5.04.36.32.68.94.68 1.9v2.82c0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>
