@@ -25,7 +25,14 @@ import { SourcesCard } from "@/components/chat/SourcesCard";
 import { RunMeter } from "@/components/chat/RunMeter";
 import { ArtifactCard } from "@/components/chat/ArtifactCard";
 import { ExportPdfButton } from "@/components/chat/ExportPdfButton";
-import { degradedBodyToRender, toolLineParts } from "@/components/chat/render-rules";
+import { ActivityRail } from "@/components/chat/ActivityRail";
+import {
+  degradedBodyToRender,
+  expandableEntries,
+  hasExpandableContent,
+  toolLineParts,
+  type ExpandableEntry,
+} from "@/components/chat/render-rules";
 import { MarkdownBlocks } from "@/components/chat/MarkdownBlocks";
 import {
   deriveRunSurfaces,
@@ -319,6 +326,57 @@ function ToolStatusLine({ t }: { t: ToolStatusEntry }) {
   );
 }
 
+/**
+ * D-66 expanded panel — the persisted search-result titles and domains (and a
+ * fetch row's [n] badge). THE PHASE'S ONE GENUINELY NEW SECURITY SURFACE
+ * (T-04-43): these strings came from the open web through a model whose
+ * context includes fetched pages — attacker-influenceable text that Phase 3
+ * persisted and this is the first code to expand into the DOM. Every one is
+ * rendered as TEXT so React's default escaping applies; never raw markup,
+ * never any HTML-inserting path, and no anchors at all — nothing here is a
+ * link, so no href can be minted from web-sourced data (T-04-44 satisfied by
+ * construction). The row's own label/meta strings stay derived by
+ * toolLineParts, never read from the payload (T-03-15-05 posture preserved).
+ *
+ * Grammar matches the "Also found" rows (SourcesCard.FoundEntries): entries
+ * at 12.5px --text-2, titles single-line with ellipsis + a title attribute,
+ * domains mono 11px and NEVER truncated (the Phase 3 trust-signal rule). No
+ * count label is rendered, so no plural string can disagree with the data.
+ * pl-[30px] = the row's own 14px padding + the 16px panel indent.
+ */
+function ToolRowPanel({ entries }: { entries: ExpandableEntry[] }) {
+  return (
+    <ul className="m-0 list-none pb-[6px] pl-[30px] pt-[2px]">
+      {entries.map((en, i) => (
+        <li
+          key={i}
+          className="flex items-baseline gap-[10px] py-[3px] text-[12.5px] text-[var(--text-2)]"
+        >
+          <span className="min-w-0 flex-1 truncate" title={en.title}>
+            {en.title}
+          </span>
+          {en.domain.length > 0 && (
+            <span
+              className="ml-auto flex-none whitespace-nowrap text-[11px]"
+              style={{ fontFamily: "var(--mono)" }}
+            >
+              {en.domain}
+            </span>
+          )}
+          {typeof en.n === "number" && (
+            <span
+              className="flex-none rounded-[4px] border border-[var(--accent-line)] bg-[var(--accent-soft)] px-[4px] text-[10.5px] text-[var(--accent)]"
+              style={{ fontFamily: "var(--mono)" }}
+            >
+              [{en.n}]
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function ToolStatusGroup({
   tools,
   meter,
@@ -335,9 +393,43 @@ function ToolStatusGroup({
       {meter}
       {tools.length > 0 && (
         <div className="flex flex-col" role="status" aria-live="polite">
-          {tools.map((t) => (
-            <ToolStatusLine key={t.id} t={t} />
-          ))}
+          {tools.map((t) =>
+            /* D-66: a row becomes a nested native disclosure ONLY when its
+               persisted payload has expandable content (the render-rules
+               predicate); otherwise it stays exactly the plain line it is
+               today — no chevron, never an empty panel (D-52). Nested
+               disclosures are uncontrolled (no state, no inert handling): a
+               nested one inside a CLOSED parent is not rendered, hence not
+               focusable. ToolStatusLine renders no anchors, which is what
+               makes it legal as a summary's child — result content lives in
+               the panel below, never in the summary line. The named
+               group/toolrow scopes the chevron rotation to THIS row so the
+               outer rail's own group-open state cannot rotate it. */
+            hasExpandableContent(t) ? (
+              <details key={t.id} className="group/toolrow">
+                <summary className="flex cursor-pointer list-none items-center [&::-webkit-details-marker]:hidden">
+                  <div className="min-w-0 flex-1">
+                    <ToolStatusLine t={t} />
+                  </div>
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="ml-[10px] h-[12px] w-[12px] flex-none text-[var(--text-2)] transition-transform duration-150 group-open/toolrow:rotate-90 motion-reduce:transition-none"
+                  >
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </summary>
+                <ToolRowPanel entries={expandableEntries(t)} />
+              </details>
+            ) : (
+              <ToolStatusLine key={t.id} t={t} />
+            ),
+          )}
         </div>
       )}
     </div>
@@ -623,13 +715,43 @@ const MessageRow = memo(function MessageRow({
         </div>
       ) : (
         <div className="flex w-full max-w-[92%] flex-col gap-1">
-          {/* [1] Research plan card (RSCH-01) — absent when the
-              model omitted the block (D-52: renders null). */}
-          <ResearchPlanCard items={planItems} />
-          {/* [2] Run meter + tool-status rail — live SSE lines for
-              the initiating tab (CHAT-06), replayed rows otherwise;
-              one derivation feeds both (D-25). */}
-          <ToolStatusGroup tools={lines} meter={meterNode} />
+          {/* [1] Activity rail (D-64/65) — items [1] and [2] of the fixed
+              vertical order, RE-PARENTED (never re-derived) into one bounded
+              disclosure card: the plan card (absent when the model omitted
+              the block — D-52: renders null, so the slot is passed only when
+              items exist) and the run meter + tool-status group (live SSE
+              lines for the initiating tab, CHAT-06; replayed rows otherwise;
+              one derivation feeds both, D-25). Both live-region placements
+              survive the move INSIDE ToolStatusGroup: the meter stays its
+              first row and stays OUTSIDE the polite region, the tool lines
+              keep their own role="status" aria-live="polite" wrapper.
+              Consequence: collapsing the rail hides that live region — fine
+              at terminal, and it must NEVER happen mid-run; the rail's
+              flag-keyed state machine is what guarantees collapse fires only
+              at the terminal transition (T-04-47). The summary counts come
+              from the SAME derivation output plus the persisted run row —
+              iterations/elapsed mirror the meterNode's own terminal
+              fallbacks exactly, so the collapsed line and the meter row can
+              never disagree (T-04-45). */}
+          <ActivityRail
+            terminal={terminal}
+            sourcesCount={sources.length}
+            iterations={
+              meter?.iterations ??
+              Math.max(liveIterations, realtimeRun?.iterations ?? 0)
+            }
+            elapsedMs={meter?.elapsedMs}
+            plan={
+              planItems.length > 0 ? (
+                <ResearchPlanCard items={planItems} />
+              ) : null
+            }
+            activity={
+              lines.length > 0 || meterNode ? (
+                <ToolStatusGroup tools={lines} meter={meterNode} />
+              ) : null
+            }
+          />
           {m.content.length > 0 ? (
             <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] px-[16px] py-[12px] text-[14px] leading-[1.6] text-[var(--text)]">
               {/* [3] Answer markdown on the real .chat-markdown
