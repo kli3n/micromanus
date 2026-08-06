@@ -281,20 +281,35 @@ body {
   margin: 16px 0;
 }
 
-/* Inline citation markers (RSCH-02 / D-35). Verbatim from 03-UI-SPEC § [3].
-   `vertical-align:super` on an 11px marker inside 1.68 line-height prose does
-   not grow the line box — no CLS as citations stream in [BD §8]. */
+/* Inline citation chips (RSCH-02 / D-35, upgraded per 04-UI-SPEC § D-67).
+   Chip, not dashed underline: accent-soft fill, accent text, 1px accent-line
+   border, superscript alignment, app-wide D-70 focus ring inherited.
+   CLS guard [BD §8], measured in the BUILT page while streaming (04-10):
+   without `line-height: 1` the chip's inherited leaded box (1.68 × 10.5px,
+   raised by `super`) overflows the 24.36px prose line box by 0.83px and every
+   chip-bearing line grows — the D-67 fallback ladder is structurally exhausted
+   (rung 1, vertical padding, is already 0 in `padding: 0 4px`; rung 2, border
+   removal, measured a no-op because inline borders never participate in
+   line-box math). `line-height: 1` on the CHIP collapses its own leaded box
+   only — the canonical sup/sub rhythm fix; the prose `line-height: 1.68`
+   above is untouched, and with it the chip paragraph measures byte-identical
+   to a chipless one (24.36px pitch) with zero shift on the plain-text→chip
+   upgrade. Do not remove it: the border/padding rungs cannot replace it. */
 .chat-markdown a.cite {
+  background: var(--accent-soft);
   color: var(--accent);
-  text-decoration: none;
+  border: 1px solid var(--accent-line);
+  border-radius: 4px;
+  padding: 0 4px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
+  line-height: 1;
   vertical-align: super;
-  border-bottom: 1px dashed var(--accent-line);
+  text-decoration: none;
 }
 .chat-markdown a.cite:hover {
+  background: var(--accent-line);
   color: var(--accent-hover);
-  border-bottom-style: solid;
 }
 /* .cite keyboard focus is the app-wide D-70 :focus-visible ring above —
    its legacy --accent-soft box-shadow ring was deleted (Amendment A3). */
