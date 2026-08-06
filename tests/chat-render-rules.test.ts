@@ -269,7 +269,10 @@ describe("hasExpandableContent / expandableEntries — the D-66 payload predicat
   // Shape-for-shape copies of what lib/agent/loop.ts resolveToolStatus emits
   // over SSE AND persists as the role='tool' row content (03-03 contract), so
   // the predicate is exercised on exactly what both render paths feed it.
-  const searchDone: ExpandableToolRowInput = {
+  // Not annotated: carries the emitted row's `query` field, which the
+  // predicate deliberately does not read (structural width subtyping passes it
+  // through; an annotation would trip the excess-property check instead).
+  const searchDone = {
     tool: "web_search",
     query: "lithium sulfide Li2S price precursor capacity",
     results: [
@@ -402,7 +405,9 @@ describe("hasExpandableContent / expandableEntries — the D-66 payload predicat
   });
 
   it("fetch_page: a FAILED fetch carries none of the four keys and reports none", () => {
-    const failed: ExpandableToolRowInput = {
+    // Not annotated: the emitted failure row carries `note`, which the
+    // predicate does not read (see searchDone above).
+    const failed = {
       tool: "fetch_page",
       url: "https://blocked.example/x",
       note: "could not read the page",

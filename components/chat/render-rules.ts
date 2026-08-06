@@ -162,3 +162,114 @@ export function degradedBodyToRender(args: {
   if (trimmed === answer.trim()) return null;
   return carrier;
 }
+
+/**
+ * One row of an expanded tool-row panel (D-66, 04-09). `title` and `domain`
+ * originate on the open web (search result titles, fetched page titles) and
+ * MUST be rendered as text so React's default escaping applies — never through
+ * any HTML-inserting path (T-04-43). `n` is the server-assigned source number
+ * a resolved `fetch_page` row carries (D-35); absent everywhere else.
+ */
+export interface ExpandableEntry {
+  title: string;
+  domain: string;
+  n?: number;
+}
+
+/**
+ * Structural input — the fields the D-66 expandable-payload decisions read.
+ * Declared here rather than imported so the module stays free of the client
+ * component graph; the persisted `ToolStatusEntry` row satisfies it by
+ * construction (every field below is optional on that shape, and `results`
+ * widens to `unknown` because a persisted payload is untrusted and may carry
+ * anything).
+ */
+export interface ExpandableToolRowInput {
+  tool: string;
+  n?: number;
+  title?: string;
+  domain?: string;
+  url?: string;
+  extract?: string;
+  kind?: string;
+  /**
+   * Read for PRESENCE only — the GW-05 vintage marker. The VALUE is never
+   * trusted or rendered, matching `toolLineParts` above (T-03-15-05).
+   */
+  label?: string;
+  results?: unknown;
+}
+
+/**
+ * The payload keys only a post-03-04 deploy writes — the same list as
+ * `POST_NUMBERING_KEYS` in `scripts/eval-run.ts` (GW-05 marker 3). A
+ * `fetch_page` row carrying any of them is a post-numbering row whose payload
+ * the D-66 panel can surface; a failed fetch and a legacy pre-Phase-3 row
+ * carry none of them and degrade to today's plain line.
+ */
+const POST_NUMBERING_KEYS = ["kind", "n", "extract", "label"] as const;
+
+/**
+ * D-66 predicate: does this persisted tool row have expandable content?
+ *
+ * Answers from the presence and shape of the persisted RESULT data only —
+ * never the payload's own `label`/`meta` strings (T-03-15-05) — and consults
+ * `KNOWN_TOOL_NAMES` first so the EC-08 gate is not weakened: an unknown tool
+ * name never gains a chevron regardless of what its payload claims to carry.
+ * `false` for anything malformed; a chevron exists ONLY when the panel behind
+ * it has at least one renderable entry, so an empty expansion is impossible
+ * (D-52 graceful absence).
+ */
+export function hasExpandableContent(t: ExpandableToolRowInput): boolean {
+  if (!KNOWN_TOOL_NAMES.has(t.tool)) return false;
+  return expandableEntries(t).length > 0;
+}
+
+/**
+ * D-66 accessor: the entries an expanded tool row renders.
+ *
+ * `web_search` — one entry per persisted result carrying a string `url`
+ * (mirroring the "Also found" validity rule in the derivation): title falls
+ * back to the url, domain to "". `fetch_page` — a single entry, gated on the
+ * post-numbering marker keys, title falling back to the domain (the D-35
+ * registry rule: extractedTitle-or-domain), with the server-assigned `n` when
+ * the row carries a finite one. Rows with a marker but nothing renderable
+ * yield NO entry — never an empty panel. Pure over the row's shape; never
+ * throws on malformed input.
+ */
+export function expandableEntries(t: ExpandableToolRowInput): ExpandableEntry[] {
+  if (!KNOWN_TOOL_NAMES.has(t.tool)) return [];
+  if (t.tool === "web_search") {
+    if (!Array.isArray(t.results)) return [];
+    const entries: ExpandableEntry[] = [];
+    for (const r of t.results) {
+      if (!r || typeof r !== "object") continue;
+      const url = (r as { url?: unknown }).url;
+      if (typeof url !== "string") continue;
+      const title = (r as { title?: unknown }).title;
+      const domain = (r as { domain?: unknown }).domain;
+      entries.push({
+        title: typeof title === "string" && title.length > 0 ? title : url,
+        domain: typeof domain === "string" ? domain : "",
+      });
+    }
+    return entries;
+  }
+  if (t.tool === "fetch_page") {
+    // Presence, never truthiness: n:0 and extract:"" are legitimate persisted
+    // values and still count as markers (T-03-16-03).
+    const hasMarker = POST_NUMBERING_KEYS.some((k) => t[k] !== undefined);
+    if (!hasMarker) return [];
+    const domain = typeof t.domain === "string" ? t.domain : "";
+    const title =
+      typeof t.title === "string" && t.title.length > 0 ? t.title : domain;
+    if (title.length === 0 && domain.length === 0) return [];
+    const entry: ExpandableEntry = { title, domain };
+    if (typeof t.n === "number" && Number.isFinite(t.n)) entry.n = t.n;
+    return [entry];
+  }
+  // create_pdf_report is a known tool with no disclosure surface (D-66 names
+  // only the search and fetch rows), and any future KNOWN_TOOL_NAMES addition
+  // must opt in here explicitly rather than inherit a chevron by default.
+  return [];
+}
