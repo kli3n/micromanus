@@ -280,10 +280,10 @@
   h1.hero-h{font-size:38px;line-height:1.14;font-weight:650;letter-spacing:-.025em;margin:0 0 18px;
     max-width:20ch;text-wrap:balance}
   h1.hero-h em{font-style:normal;color:var(--accent)}
-  .hero-sub{font-size:16.5px;line-height:1.6;color:var(--text-2);margin:0 0 32px;max-width:58ch}
+  .hero-sub{font-size:15.5px;line-height:1.6;color:var(--text-2);margin:0 0 32px;max-width:58ch}
   .hero-sub strong{color:var(--text);font-weight:600}
   .oauth{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-  .btn-oauth{display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 22px;border-radius:var(--radius);
+  .btn-oauth{display:inline-flex;align-items:center;gap:10px;height:46px;padding:0 22px;border-radius:var(--radius);
     font-size:14.5px;font-weight:600;cursor:pointer;border:1px solid var(--border-strong);background:var(--surface);
     color:var(--text);transition:border-color .15s,background .15s}
   .btn-oauth:hover{border-color:var(--text-2)}
@@ -438,7 +438,7 @@
                 Continue with Google
               </button>
             </div>
-            <p class="hero-fine">Free to try with a credit coupon. Add your <code>OpenAI</code>, <code>Anthropic</code>, or <code>Kimi</code> key in settings — it is encrypted and never leaves the server.</p>
+            <p class="hero-fine">Add your <code>OpenAI</code>, <code>Anthropic</code>, or <code>Kimi</code> key in settings — it is encrypted and never leaves the server.</p>
 
             <div class="hero-how" id="how">
               <div class="how-step">
@@ -467,8 +467,11 @@
       <div class="note">
         <p><b style="color:var(--chrome-text)">Copy rationale:</b> the headline names the product's two
         real differentiators (it shows sources, and it shows cost) without inventing claims. No card
-        payments (ADR 0001), no team features, no coupon promise beyond "free to try with a credit
-        coupon". "Continue with GitHub / Google" are the locked OAuth strings, restyled only.</p>
+        payments (ADR 0001), no team features, and <b style="color:var(--chrome-text)">no coupon promise at
+        all</b> — the hero copy contract forbids promising the coupon flow on the landing page, so the
+        drafted opening sentence of the fine print, which offered a free trial via a credit coupon, was
+        removed from both the desktop and the phone variant (04-13 correction, adjudication T-5).
+        "Continue with GitHub / Google" are the locked OAuth strings, restyled only.</p>
       </div>
 
       <div class="phones">
@@ -495,7 +498,7 @@
                       Continue with Google
                     </button>
                   </div>
-                  <p class="hero-fine">Free to try with a credit coupon. Add your own provider key in settings.</p>
+                  <p class="hero-fine">Add your own provider key in settings.</p>
                 </div>
               </div>
             </div>
