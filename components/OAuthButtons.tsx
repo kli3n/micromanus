@@ -5,12 +5,21 @@ import { createClient } from "@/lib/supabase/client";
 
 type Provider = "github" | "google";
 
+// Full designed state set (design/components.html .oauth/.btn): hover fills
+// --surface-2 and darkens the border, active is a 1px translate, keyboard
+// focus is the inherited app-wide D-70 ring (no per-control declaration),
+// loading swaps the label inside the fixed h-[46px] w-full box so the button
+// never resizes above the fold (CLS discipline [BD]), disabled dims both
+// buttons while either sign-in is in flight. The literal hover-border hex is
+// demo-verbatim (landing.html + auth-error.html; allowlisted), and the four
+// Google logo hexes below are brand-exempt — a third party's mark cannot be
+// tokenised. No card-payment affordance may ever appear here (ADR 0001).
 const BTN_CLASS =
   "flex items-center justify-center gap-2.5 h-[46px] w-full rounded-[var(--radius)] " +
   "border border-[var(--border-strong)] bg-[var(--surface)] text-[var(--text)] " +
   "text-[14.5px] font-[550] cursor-pointer transition-colors " +
   "hover:bg-[var(--surface-2)] hover:border-[#CFC7B9] active:translate-y-px " +
-  "disabled:opacity-60 disabled:cursor-not-allowed";
+  "disabled:opacity-60 disabled:cursor-not-allowed motion-reduce:transition-none";
 
 export function OAuthButtons() {
   const [pending, setPending] = useState<Provider | null>(null);
@@ -34,11 +43,20 @@ export function OAuthButtons() {
 
   return (
     <div className="flex flex-col gap-[11px]">
+      {/* Accessible names follow the house idiom (outcome-describing, states
+          the consequence) while embedding the locked visible copy verbatim so
+          WCAG 2.5.3 label-in-name holds; the rendered strings are untouched. */}
       <button
         type="button"
         className={BTN_CLASS}
         onClick={() => signIn("github")}
         disabled={pending !== null}
+        aria-busy={pending === "github"}
+        aria-label={
+          pending === "github"
+            ? "Connecting to GitHub…"
+            : "Continue with GitHub — takes you to GitHub to sign in"
+        }
       >
         <svg
           viewBox="0 0 24 24"
@@ -56,6 +74,12 @@ export function OAuthButtons() {
         className={BTN_CLASS}
         onClick={() => signIn("google")}
         disabled={pending !== null}
+        aria-busy={pending === "google"}
+        aria-label={
+          pending === "google"
+            ? "Connecting to Google…"
+            : "Continue with Google — takes you to Google to sign in"
+        }
       >
         <svg
           viewBox="0 0 24 24"
