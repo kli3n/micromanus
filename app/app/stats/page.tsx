@@ -592,7 +592,7 @@ export default async function StatsPage() {
           })}
             </div>
           </div>
-          <p className="mt-[14px] text-[11.5px] leading-[1.6] text-[var(--text-3)]">
+          <p className="mt-[14px] text-[11.5px] leading-[1.6] text-[var(--text-2)]">
             Click any chat row to expand its per-run drill-down.
           </p>
         </>
@@ -606,17 +606,17 @@ export default async function StatsPage() {
 const STATS_CSS = `
 .stats-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:22px}
 .stats-tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 15px;box-shadow:var(--shadow-sm)}
-.stats-tile-label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);margin-bottom:7px}
+.stats-tile-label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-2);margin-bottom:7px}
 .stats-tile-value{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
 .stats-tile-value.accent{color:var(--accent)}
 .stats-tile-value.success{color:var(--success)}
 .stats-tile-value.muted{color:var(--text-2)}
-.stats-tile-sub{font-size:11px;color:var(--text-3);margin-top:4px;font-variant-numeric:tabular-nums}
+.stats-tile-sub{font-size:11px;color:var(--text-2);margin-top:4px;font-variant-numeric:tabular-nums}
 .stats-savings-note{font-size:12.5px;color:var(--text-2);margin-top:-10px;margin-bottom:22px;line-height:1.5}
 .stats-scroll{overflow-x:auto}
 .stats-table{min-width:720px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .stats-thead,.stats-summary{display:grid;grid-template-columns:minmax(200px,1fr) 128px repeat(6,minmax(70px,max-content));gap:14px;align-items:center;padding:11px 16px}
-.stats-thead{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);background:var(--surface-2);border-bottom:1px solid var(--border)}
+.stats-thead{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-2);background:var(--surface-2);border-bottom:1px solid var(--border)}
 .stats-summary{border-bottom:1px solid var(--border);font-size:13px}
 .stats-summary:last-child{border-bottom:0}
 .stats-thead .num,.stats-summary .num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text-2)}
@@ -624,25 +624,28 @@ const STATS_CSS = `
 .stats-summary .num.saved{color:var(--success)}
 .stats-chat{display:flex;align-items:center;gap:8px;min-width:0}
 .stats-chat-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stats-chat-meta{font-size:11.5px;color:var(--text-3);white-space:nowrap}
-.stats-model{font-family:var(--mono);font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stats-chat-meta{font-size:11.5px;color:var(--text-2);white-space:nowrap}
+.stats-model{font-family:var(--mono);font-size:11px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stats-row{border-bottom:1px solid var(--border)}
 .stats-row:last-child{border-bottom:0}
 .stats-summary{cursor:pointer;list-style:none;transition:background .12s}
 .stats-summary::-webkit-details-marker{display:none}
 .stats-summary:hover{background:var(--surface-2)}
-.stats-summary:focus-visible{outline:none;box-shadow:inset 0 0 0 3px var(--accent-soft)}
-.stats-chev{width:13px;height:13px;flex:none;color:var(--text-3);transition:transform .15s}
+/* Keyboard focus on the disclosure summary is inherited from the single
+   app-wide outline ring in app/globals.css (@layer base, D-70/Amendment A3).
+   The local pale-wash inner ring that used to live here (site 4 of 4, never
+   AA-visible at 1.17:1) was deleted by plan 04-12 — do not re-declare a ring. */
+.stats-chev{width:13px;height:13px;flex:none;color:var(--text-2);transition:transform .15s}
 .stats-row[open] .stats-chev{transform:rotate(90deg)}
 .stats-drill{padding:2px 16px 16px 34px;background:var(--surface-2)}
-.stats-drill-h{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin:12px 0 8px;font-weight:600}
+.stats-drill-h{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-2);margin:12px 0 8px;font-weight:600}
 .stats-run-line{display:grid;grid-template-columns:1fr repeat(4,minmax(84px,auto)) minmax(64px,auto);gap:14px;align-items:center;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);margin-bottom:6px;font-size:12px}
 .stats-run-line .rq{font-weight:550;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .stats-run-line .rc{font-family:var(--mono);color:var(--text-2);text-align:right;font-variant-numeric:tabular-nums}
-.stats-run-line .rc small{color:var(--text-3);font-size:10px;display:block}
+.stats-run-line .rc small{color:var(--text-2);font-size:10px;display:block}
 .stats-run-line .rt{font-family:var(--mono);font-weight:650;text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
 .stats-budget{color:var(--warning);font-weight:600}
-.stats-pricenote{font-size:11px;color:var(--text-3);margin:2px 0 12px;line-height:1.5}
+.stats-pricenote{font-size:11px;color:var(--text-2);margin:2px 0 12px;line-height:1.5}
 .stats-pricenote code{font-family:var(--mono);background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
 @media (prefers-reduced-motion: reduce){.stats-chev,.stats-summary{transition:none}}
 `;
