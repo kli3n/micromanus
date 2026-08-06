@@ -189,10 +189,14 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1.5 block text-[13px] font-[600]">Provider</span>
+            {/* --border-strong is DELIBERATE here (04-RESEARCH § Color math
+                conclusion 5): border contrast is a 1.4.11 judgement call, and
+                this select's boundary is load-bearing — keep it darkened.
+                Keyboard focus is the inherited app-wide D-70 outline ring. */}
             <select
               value={provider}
               onChange={(e) => onProviderChange(e.target.value as Provider)}
-              className="h-[44px] w-full cursor-pointer rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text)]"
+              className="h-[44px] w-full cursor-pointer rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-3 text-[14px] text-[var(--text)] transition-colors hover:bg-[var(--surface-2)] motion-reduce:transition-none"
             >
               {PROVIDER_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value} disabled={o.disabled}>
@@ -205,9 +209,15 @@ export default function SettingsPage() {
           <label className="block">
             <span className="mb-1.5 block text-[13px] font-[600]">
               Base URL{" "}
-              <span className="font-[400] text-[var(--text-3)]">· editable</span>
+              <span className="font-[400] text-[var(--text-2)]">· editable</span>
             </span>
-            <div className="flex h-[44px] items-center rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
+            {/* This input opts OUT of the app-wide D-70 ring (the Paywall
+                coupon-input precedent, user decision at 04-04 checkpoint):
+                the wrapper's focus-within accent border is the sole focus
+                affordance for a wrapped input. The legacy pale-accent-wash
+                focus shadow (1.17:1 — never AA-visible, Amendment A3) is
+                deleted; do not reintroduce a per-control ring. */}
+            <div className="flex h-[44px] items-center rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] transition-[border-color] focus-within:border-[var(--accent)] motion-reduce:transition-none">
               <input
                 value={baseUrl}
                 onChange={(e) => {
@@ -223,7 +233,9 @@ export default function SettingsPage() {
 
         <div className="mt-4">
           <span className="mb-1.5 block text-[13px] font-[600]">API key</span>
-          <div className="flex h-[44px] items-center gap-2 rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
+          {/* Same D-70 ring opt-out as the Base URL wrapper above (Paywall
+              precedent): focus-within accent border only, legacy wash deleted. */}
+          <div className="flex h-[44px] items-center gap-2 rounded-[var(--radius)] border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] transition-[border-color] focus-within:border-[var(--accent)] motion-reduce:transition-none">
             <input
               value={apiKey}
               onChange={(e) => {
@@ -237,19 +249,26 @@ export default function SettingsPage() {
               className="w-full border-0 bg-transparent font-[var(--mono)] text-[13.5px] text-[var(--text)] outline-none"
             />
           </div>
-          <div className="mt-1.5 text-[11.5px] leading-[1.5] text-[var(--text-3)]">
+          <div className="mt-1.5 text-[11.5px] leading-[1.5] text-[var(--text-2)]">
             After saving you&apos;ll only ever see the last 4 characters.
           </div>
         </div>
 
-        <div className="mt-4 flex items-center gap-[10px]">
+        {/* Designed state set (design/components.html .secondary/.primary):
+            hover fill/darken, active 1px translate, loading via aria-busy with
+            a reserved width so the label swap never resizes the button, and
+            keyboard focus from the inherited app-wide D-70 ring. flex-wrap
+            keeps the row from overflowing at 360px. */}
+        <div className="mt-4 flex flex-wrap items-center gap-[10px]">
           <button
             type="button"
             onClick={onTest}
             disabled={verifyState === "verifying"}
-            className="flex h-9 items-center gap-[7px] rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-transparent px-3 text-[13.5px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-70"
+            aria-busy={verifyState === "verifying"}
+            className="flex h-9 items-center gap-[7px] rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-transparent px-3 text-[13.5px] font-[550] text-[var(--text-2)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-70 motion-reduce:transition-none"
           >
             <svg
+              aria-hidden="true"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -273,7 +292,7 @@ export default function SettingsPage() {
                     ? "var(--success)"
                     : verifyState === "fail"
                       ? "var(--error)"
-                      : "var(--text-3)",
+                      : "var(--text-2)",
               }}
             >
               {verifyMsg}
@@ -283,9 +302,11 @@ export default function SettingsPage() {
             type="button"
             onClick={onSave}
             disabled={!canSave}
-            className="ml-auto flex h-9 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--accent)] bg-[var(--accent)] px-[15px] text-[13.5px] font-[600] text-white transition-colors hover:bg-[var(--accent-hover)] active:translate-y-px disabled:cursor-not-allowed disabled:border-[var(--border)] disabled:bg-[var(--surface-2)] disabled:text-[var(--text-3)]"
+            aria-busy={saving}
+            className="ml-auto flex h-9 min-w-[116px] items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--accent)] bg-[var(--accent)] px-[15px] text-[13.5px] font-[600] text-white transition-colors hover:bg-[var(--accent-hover)] active:translate-y-px disabled:cursor-not-allowed disabled:border-[var(--border)] disabled:bg-[var(--surface-2)] disabled:text-[var(--text-2)] motion-reduce:transition-none"
           >
             <svg
+              aria-hidden="true"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -318,14 +339,15 @@ export default function SettingsPage() {
 
       {/* Saved keys — last-4 only (KEY-03 surface). Empty-state nudge (UX-02). */}
       <div className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)]">
-        <div className="mb-3 text-[11px] font-[600] uppercase tracking-[.06em] text-[var(--text-3)]">
+        <div className="mb-3 text-[11px] font-[600] uppercase tracking-[.06em] text-[var(--text-2)]">
           Saved keys
         </div>
         {loadingKeys ? (
-          <p className="m-0 text-[13px] text-[var(--text-3)]">Loading…</p>
+          <p className="m-0 text-[13px] text-[var(--text-2)]">Loading…</p>
         ) : keys.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-4 py-6 text-center text-[var(--text-3)]">
+          <div className="flex flex-col items-center gap-2 px-4 py-6 text-center text-[var(--text-2)]">
             <svg
+              aria-hidden="true"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -353,11 +375,11 @@ export default function SettingsPage() {
                   {PROVIDER_TITLE[k.provider] ?? k.provider}
                 </span>
                 {k.base_url && (
-                  <span className="truncate font-[var(--mono)] text-[11px] text-[var(--text-3)]">
+                  <span className="truncate font-[var(--mono)] text-[11px] text-[var(--text-2)]">
                     {k.base_url}
                   </span>
                 )}
-                <span className="ml-auto font-[var(--mono)] text-[12px] text-[var(--text-3)]">
+                <span className="ml-auto font-[var(--mono)] text-[12px] text-[var(--text-2)]">
                   last 4: {k.last4}
                 </span>
               </li>
@@ -369,9 +391,9 @@ export default function SettingsPage() {
       {/* Step 3 · Model registry (KEY-05 / D-22). Saving a provider's key
           unlocks that provider's rows via savedProviders below. */}
       <div className="mt-[22px]">
-        <p className="m-0 mb-3 text-[11px] font-[700] uppercase tracking-[.08em] text-[var(--text-3)]">
+        <p className="m-0 mb-3 text-[11px] font-[700] uppercase tracking-[.08em] text-[var(--text-2)]">
           Step 3 · Model registry{" "}
-          <span className="font-[500] normal-case tracking-normal text-[var(--text-3)]">
+          <span className="font-[500] normal-case tracking-normal text-[var(--text-2)]">
             — verified per-1M pricing, pick per chat
           </span>
         </p>
@@ -382,7 +404,7 @@ export default function SettingsPage() {
           value={selectedModel}
           onChange={setSelectedModel}
         />
-        <p className="mt-4 text-[11.5px] leading-[1.5] text-[var(--text-3)]">
+        <p className="mt-4 text-[11.5px] leading-[1.5] text-[var(--text-2)]">
           Prices verified against each provider&apos;s pricing page at build time
           (D-24). Cost is always computed from provider-reported usage — never
           estimated.
