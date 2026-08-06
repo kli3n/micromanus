@@ -317,7 +317,7 @@ function ToolStatusLine({ t }: { t: ToolStatusEntry }) {
         <span>{text}</span>
       </span>
       <span
-        className="ml-auto flex-none text-[10.5px] text-[var(--text-3)]"
+        className="ml-auto flex-none text-[10.5px] text-[var(--text-2)]"
         style={{ fontFamily: "var(--mono)" }}
       >
         {meta}
@@ -1799,7 +1799,7 @@ export function ChatThread({
         className="flex-1 overflow-y-auto px-1 py-4"
       >
         {showEmpty && (
-          <div className="mx-auto max-w-[460px] py-16 text-center text-[var(--text-3)]">
+          <div className="mx-auto max-w-[460px] py-16 text-center text-[var(--text-2)]">
             <p className="text-[14.5px] leading-[1.6]">
               Ask the deep-research agent a question — it browses the web, reasons
               across sources, and streams a cited answer.
@@ -1878,7 +1878,7 @@ export function ChatThread({
         ) : !modelId ? (
           <div
             role="note"
-            className="rounded-[var(--radius)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] px-[14px] py-[12px] text-[13px] text-[var(--text-3)]"
+            className="rounded-[var(--radius)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] px-[14px] py-[12px] text-[13px] text-[var(--text-2)]"
           >
             Pick a model to start this research chat.
           </div>

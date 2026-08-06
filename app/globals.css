@@ -69,12 +69,11 @@ body {
    Ring contrast: --accent measures 4.36–5.18:1 on every warm surface it can
    sit on — over the 3:1 non-text AA bar (04-RESEARCH § Color math).
    Supersedes the scattered `box-shadow: 0 0 0 3px var(--accent-soft)` rings
-   (--accent-soft is 1.17:1 on --surface — never AA-visible). Two legacy
-   sites remain in the tree and are removed by their owning plan — do NOT
-   reintroduce a per-control ring:
-     - components/chat/SourcesCard.tsx:144 and :173  -> plan 04-11
-   (site 4, .stats-summary in app/app/stats/page.tsx STATS_CSS, was removed
-   by plan 04-12)
+   (--accent-soft is 1.17:1 on --surface — never AA-visible). All four legacy
+   sites are now gone (sites 2 and 3, the SourcesCard pair, removed by plan
+   04-11; site 4, .stats-summary in app/app/stats/page.tsx STATS_CSS, by plan
+   04-12) — this rule is the app's ONE focus ring; do NOT reintroduce a
+   per-control ring.
    Layered under `base` deliberately: Tailwind v4 emits utilities inside
    @layer utilities, and an UNLAYERED rule here would beat every layered
    `rounded-*` utility on focus (unlayered author CSS outranks all @layer

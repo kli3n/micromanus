@@ -8,7 +8,8 @@
  * Row resolution (derived identically from live SSE state and replayed rows —
  * D-25 parity): row i is resolved when i < count of DONE web_search entries
  * for this message, OR the run is terminal. A resolved row greys its TEXT
- * SPAN via opacity .55 (compositor-only, 140ms, none under reduced motion) —
+ * SPAN via opacity .62 (compositor-only, 140ms, none under reduced motion;
+ * .62 not .55 so the greyed text still clears the AA bar — 04-11) —
  * the row never changes height, never reflows, never disappears.
  *
  * Absence (D-52): when the model omitted the plan block, `items` is empty and
@@ -102,8 +103,13 @@ export function ResearchPlanCard({ items }: { items: PlanRowItem[] }) {
             <span
               title={item.text}
               className={
+                // Resolved rows grey via opacity (compositor-only, the D-31–34
+                // treatment) at .62, not .55: --text at 55% over the surface
+                // resolves to ~3.78:1 — under the AA text bar for a
+                // sub-question a user still reads — while 62% measures ~4.73:1
+                // and keeps the greying legible (04-11 sweep).
                 "min-w-0 flex-1 truncate text-[14px] leading-[1.5] text-[var(--text)] transition-opacity duration-[140ms] motion-reduce:transition-none" +
-                (item.resolved ? " opacity-[.55]" : "")
+                (item.resolved ? " opacity-[.62]" : "")
               }
             >
               <span className="sr-only">

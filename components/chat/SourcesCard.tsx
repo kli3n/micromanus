@@ -106,6 +106,8 @@ function FoundEntries({ entries }: { entries: FoundRow[] }) {
           key={i}
           className="flex items-baseline gap-[7px] py-[2px] text-[12.5px] text-[var(--text-2)]"
         >
+          {/* --text-3 retained: DECORATIVE — an aria-hidden list bullet whose
+              meaning is carried by the list structure itself (04-11 sweep). */}
           <span aria-hidden="true" className="flex-none text-[var(--text-3)]">
             •
           </span>
@@ -141,7 +143,9 @@ function AlsoFoundList({ entries }: { entries: FoundRow[] }) {
         </div>
         {entries.length > 4 ? (
           <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-[6px] pt-[4px] text-[11.5px] text-[var(--text-2)] focus-visible:rounded-[3px] focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+            {/* Keyboard focus is the single app-wide D-70 outline ring
+                (app/globals.css) — no per-control declaration here. */}
+            <summary className="flex cursor-pointer list-none items-center gap-[6px] pt-[4px] text-[11.5px] text-[var(--text-2)] [&::-webkit-details-marker]:hidden">
               <span
                 aria-hidden="true"
                 className="flex-none transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none"
@@ -163,14 +167,18 @@ function AlsoFoundList({ entries }: { entries: FoundRow[] }) {
 /**
  * The layout-bearing row classes — shared VERBATIM by both branches so the linked
  * and the withheld row are the same height and the same box (no CLS). The anchor
- * adds hover/focus affordances on top; those are colour/shadow only and change no
- * geometry, and a non-anchor is not focusable so they would be dead there anyway.
+ * adds a hover affordance on top; that is colour only and changes no geometry,
+ * and a non-anchor is not focusable so it would be dead there anyway. Keyboard
+ * focus comes from the single app-wide D-70 outline ring (app/globals.css) —
+ * an outline with an offset sits entirely OUTSIDE layout, so the original
+ * choice here (affordances that change no geometry) survives the swap even
+ * more strongly than the shadow form it replaces.
  */
 const SOURCE_ROW_CLASS =
   "src-row flex min-h-[34px] items-center gap-[10px] rounded-[var(--radius-sm)] px-[10px] py-[7px] text-inherit no-underline";
 
 const SOURCE_ROW_INTERACTIVE_CLASS =
-  " transition-colors hover:bg-[var(--surface-2)] focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] focus-visible:outline-none motion-reduce:transition-none";
+  " transition-colors hover:bg-[var(--surface-2)] motion-reduce:transition-none";
 
 /**
  * The row's visible content — badge, title, domain, trailing glyph — factored out
@@ -186,8 +194,12 @@ function SourceRowBody({
 }) {
   return (
     <>
+      {/* Contrast (04-11): the [n] badge drops its pale accent wash — --accent
+          text on that fill measures 4.43:1 (the fourth measured AA pair, under
+          the 4.5:1 bar); on the card surface it reads at 5.18:1, and the
+          accent-line border keeps the badge's outline. */}
       <span
-        className="min-w-[30px] flex-none rounded-[var(--radius-sm)] border border-[var(--accent-line)] bg-[var(--accent-soft)] px-[5px] py-[1px] text-center text-[11px] text-[var(--accent)]"
+        className="min-w-[30px] flex-none rounded-[var(--radius-sm)] border border-[var(--accent-line)] px-[5px] py-[1px] text-center text-[11px] text-[var(--accent)]"
         style={{ fontFamily: "var(--mono)" }}
       >
         [{s.n}]
@@ -204,9 +216,10 @@ function SourceRowBody({
       >
         {s.domain}
       </span>
-      <span
-        className={`flex-none ${linked ? "text-[var(--text-2)]" : "text-[var(--text-3)]"}`}
-      >
+      {/* Both trailing glyphs at --text-2 (04-11 sweep): the withheld glyph is
+          a state signal, not decoration, and --text-3 sat at 3.03:1 — at the
+          non-text floor on the surface and under it on the hover fill. */}
+      <span className="flex-none text-[var(--text-2)]">
         {linked ? <ExternalLinkIcon /> : <WithheldLinkIcon />}
       </span>
     </>

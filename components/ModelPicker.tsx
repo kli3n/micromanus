@@ -56,6 +56,7 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 function LockIcon() {
   return (
     <svg
+      aria-hidden="true"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -72,6 +73,7 @@ function LockIcon() {
 function ChevronIcon() {
   return (
     <svg
+      aria-hidden="true"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -124,12 +126,15 @@ function Row({
         <div className="flex items-center gap-2 text-[13.5px] font-[600]">
           {row.label}
           {role && (
-            <span className="rounded-[5px] border border-[var(--accent-line)] bg-[var(--accent-soft)] px-1.5 py-0.5 text-[9.5px] font-[700] uppercase tracking-[.04em] text-[var(--accent)]">
+            /* --accent-hover, not --accent: --accent on the pill's soft fill
+               measures 4.43:1 (the fourth measured AA pair); --accent-hover
+               reads at 6.32:1 (04-11 sweep). */
+            <span className="rounded-[5px] border border-[var(--accent-line)] bg-[var(--accent-soft)] px-1.5 py-0.5 text-[9.5px] font-[700] uppercase tracking-[.04em] text-[var(--accent-hover)]">
               {role}
             </span>
           )}
         </div>
-        <div className="mt-0.5 font-[var(--mono)] text-[11px] text-[var(--text-3)]">
+        <div className="mt-0.5 font-[var(--mono)] text-[11px] text-[var(--text-2)]">
           {row.id}
         </div>
       </div>
@@ -144,14 +149,16 @@ function Row({
               {money(row.outputPrice)}
             </span>{" "}
             out
-            <div className="mt-0.5 text-[10.5px] text-[var(--text-3)]">
+            <div className="mt-0.5 text-[10.5px] text-[var(--text-2)]">
               cache {money(row.cacheReadPrice)} r
               {row.cacheWritePrice > 0 ? ` / ${money(row.cacheWritePrice)} w` : ""}
             </div>
           </div>
         )}
         {row.nudge && (
-          <span className="inline-flex items-center gap-1 text-[10.5px] font-[600] text-[var(--warning)]">
+          /* --text-2, not --warning: warning-as-text fails AA on every
+             surface, and this row's dimmed fill makes it worse (04-11). */
+          <span className="inline-flex items-center gap-1 text-[10.5px] font-[600] text-[var(--text-2)]">
             <LockIcon />
             {row.nudge}
           </span>
@@ -197,7 +204,7 @@ export function ModelPicker({
                 </span>
                 <span
                   className="font-[var(--mono)] text-[11px]"
-                  style={{ color: hasKey ? "var(--success)" : "var(--text-3)" }}
+                  style={{ color: hasKey ? "var(--success)" : "var(--text-2)" }}
                 >
                   {hasKey ? "✓ key saved" : "○ no key"}
                 </span>
@@ -227,7 +234,7 @@ export function ModelPicker({
       >
         <span>{selected ? selected.label : "Select model"}</span>
         {selected && (
-          <span className="font-[var(--mono)] text-[11px] tabular-nums text-[var(--text-3)]">
+          <span className="font-[var(--mono)] text-[11px] tabular-nums text-[var(--text-2)]">
             {money(selected.inputPrice)} / {money(selected.outputPrice)}
           </span>
         )}
