@@ -14,6 +14,18 @@
  * browser-automation dependency plus a second test runner, for a gate that runs
  * a handful of times.
  *
+ * ── DELIBERATELY OUT OF THE COMPOSITE GATE (plan 04-14) ───────────────────────
+ * Registered as `npm run audit:a11y:deployed` and NOT a member of
+ * `npm run audit:gate`. The other four gates (unit suite, typecheck, token gate,
+ * built-CSS gate, contrast) run from source and a local build with no external
+ * provisioning; this one needs a running debug browser, TWO provisioned accounts
+ * and a DEPLOYED url (see PREREQUISITES below). Folding it into the composite
+ * gate would make that gate fail for environmental reasons on every ordinary
+ * run — and a gate that fails for the wrong reason gets ignored, which silently
+ * removes every OTHER member's protection too. The `:deployed` suffix in the
+ * script name carries the same warning at the call site; package.json is JSON
+ * and admits no comment, so this header is where the reason lives.
+ *
  * ── PREREQUISITES ─────────────────────────────────────────────────────────────
  * 1. A signed-in debug Chrome, launched BEFORE this script:
  *

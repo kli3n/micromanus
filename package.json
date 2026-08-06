@@ -15,7 +15,12 @@
     "test:guard": "node --env-file-if-exists=.env.local scripts/auth-guard.test.ts",
     "eval:offline": "node --env-file-if-exists=.env.local scripts/eval-run.ts",
     "eval:judge": "node --env-file-if-exists=.env.local scripts/eval-judge.ts",
-    "eval:gate": "npm test && npm run typecheck && npm run test:rls"
+    "eval:gate": "npm test && npm run typecheck && npm run test:rls",
+    "audit:tokens": "node --env-file-if-exists=.env.local scripts/audit-tokens.ts",
+    "audit:css": "node --env-file-if-exists=.env.local scripts/audit-css-classes.ts",
+    "audit:contrast": "node --env-file-if-exists=.env.local scripts/audit-contrast.ts",
+    "audit:a11y:deployed": "node --env-file-if-exists=.env.local scripts/a11y-audit.ts",
+    "audit:gate": "npm test && npm run typecheck && npm run build && npm run audit:tokens && npm run audit:css && npm run audit:contrast"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.112.3",
