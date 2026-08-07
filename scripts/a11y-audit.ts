@@ -27,26 +27,48 @@
  * and admits no comment, so this header is where the reason lives.
  *
  * ── PREREQUISITES ─────────────────────────────────────────────────────────────
- * 1. A signed-in debug browser speaking CDP, launched BEFORE this script. This
- *    script PRINTS the exact launch line for the current machine and port when
- *    the port check fails — that printed line, not this comment, is the copy
- *    source. On the machine this gate runs on it is Brave on port 8080:
+ * 1. A signed-in debug browser speaking CDP, launched BEFORE this script, HEADED.
+ *    This script PRINTS the exact launch line for the current machine and port
+ *    when the port check fails — that printed line, not this comment, is the copy
+ *    source, because WHICH browser it names is RESOLVED, never hardcoded:
  *
- *      "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
- *        --remote-debugging-port=8080 --user-data-dir=<os tmpdir>\mm-a11y-profile
+ *      A11Y_BROWSER (a full exe path)  ->  this device's DEFAULT browser
+ *        ->  a scan of well-known Chromium-family installs  ->  DEVTOOLS_FALLBACK
  *
- *    BRAVE, NOT CHROME, and 8080, NOT 9222: this machine has no Chrome install,
- *    and 9222 (Chrome's conventional debug port) is held by Lenovo Vantage's
- *    embedded WebView — the incident that probeDebugPort() below exists to catch.
- *    Brave is Chromium-based and reports a `Mozilla/5.0 … Chrome/<version>` UA
- *    over CDP, so it satisfies that browser-vs-WebView discriminator unchanged.
- *    Then sign in through real OAuth in that window. Lighthouse attaches to it
+ *    See resolveBrowser() for the per-platform detection. A hardcoded absolute
+ *    install path was what this replaced: it was true of exactly one machine and
+ *    false everywhere else, so the one line an operator is told to copy named a
+ *    binary another contributor does not have.
+ *
+ *    THE HARD LIMIT, stated because it cannot be engineered away: "use the
+ *    device's default browser" is only satisfiable when that default is
+ *    CHROMIUM-FAMILY. Lighthouse drives the Chrome DevTools Protocol, which Gecko
+ *    (Firefox and its forks) and WebKit (Safari) do not implement; and remote
+ *    debugging needs --remote-debugging-port on the launch line, which the OS
+ *    "open this URL in the default browser" handler cannot pass. So resolving the
+ *    default to an EXECUTABLE PATH we print is the whole mechanism. When the
+ *    detected default is not CDP-capable this script NAMES IT and says so, then
+ *    substitutes audibly — never silently. An operator who believes they audited
+ *    their default browser and did not has been handed false evidence, which is
+ *    the same defect class as the Lenovo Vantage WebView incident probeDebugPort()
+ *    exists to catch, arriving from the other side.
+ *
+ *    Launch it HEADED, not --headless=new: headless Chromium reports
+ *    `HeadlessChrome/<v>`, and the discriminator's `\b(Chrome|Chromium)\/` has no
+ *    word boundary inside `HeadlessChrome`, so a headless attach is refused by
+ *    design. Then sign in through real OAuth in that window; Lighthouse attaches
  *    over --port=<the resolved port> and inherits the session.
+ *
+ *    The port defaults to 8080, NOT 9222: 9222 (the conventional Chromium debug
+ *    port) is held on this machine by Lenovo Vantage's embedded WebView — again,
+ *    the probeDebugPort() incident. See DEFAULT_DEBUG_PORT / A11Y_DEBUG_PORT.
  * 2. Env: A11Y_BASE_URL (the deployed https origin; NEXT_PUBLIC_SITE_HOST is
  *    accepted as a fallback), A11Y_CHAT_ID (a chat owned by the signed-in
  *    account with a COMPLETED research run, so the rail, sources and artifact
  *    card are all on screen), and optionally A11Y_DEBUG_PORT (the CDP port the
- *    debug browser listens on; default 8080, validated — see resolveDebugPort).
+ *    debug browser listens on; default 8080, validated — see resolveDebugPort)
+ *    and A11Y_BROWSER (a full executable path that overrides detection; validated
+ *    fail-fast — see resolveBrowser).
  * 3. TWO ACCOUNTS, and they cannot be the same one. `/app` renders the paywall
  *    only at balance <= 0 (app/app/page.tsx:52-53), so a credited account audits
  *    a screen the reviewer will never see, and a zero-credit account owns no
@@ -94,7 +116,7 @@
  * an unreadable report; exits 0 and prints one PASSED line otherwise.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -174,6 +196,7 @@ const LIGHTHOUSE_TIMEOUT_MS = 180_000;
 const NPX_PROBE_TIMEOUT_MS = 120_000;
 
 const isWindows = process.platform === 'win32';
+const isMac = process.platform === 'darwin';
 
 /**
  * A throwaway CDP profile directory, resolved to a LITERAL absolute path rather
@@ -183,25 +206,461 @@ const isWindows = process.platform === 'win32';
  */
 const DEBUG_PROFILE_DIR = path.join(os.tmpdir(), 'mm-a11y-profile');
 
+// ---------------------------------------------------------------------------
+// WHICH BROWSER. Resolved from the operating system, never hardcoded.
+//
+// This block previously held one vendor's absolute Windows install path. That is
+// a fact about a single laptop, and the launch line built from it is the ONE
+// thing an operator is told to copy — so on any other machine the gate's headline
+// remediation instruction named a binary that does not exist. Resolution order,
+// highest priority first: A11Y_BROWSER -> the OS default browser -> a scan of
+// well-known Chromium-family installs -> nothing (DEVTOOLS_FALLBACK).
+// ---------------------------------------------------------------------------
+
 /**
- * Where the debug browser lives. BRAVE on Windows: this machine has no Chrome
- * install. Brave is Chromium-based and reports a `Mozilla/5.0 … Chrome/<version>`
- * User-Agent over CDP, so probeDebugPort's browser-vs-WebView discriminator
- * accepts it with no change to that check.
+ * Run a helper binary and return trimmed stdout, or null on any failure.
+ *
+ * Every detection path below is a best-effort probe of an OS facility that may be
+ * absent (no `reg.exe` outside Windows, no `xdg-settings` on a bare container, no
+ * `mdfind` with Spotlight disabled). A probe that cannot answer must return "I do
+ * not know" so the next source in the order gets its turn — never throw, because a
+ * throw here is a module-scope crash before main()'s catch exists.
+ *
+ * These are real executables on every platform (never a `.cmd` shim), so unlike
+ * runNpx below there is no CVE-2024-27980 / DEP0190 shell hazard: no shell at all.
  */
-const BROWSER_EXE = isWindows
-  ? String.raw`C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe`
-  : 'brave-browser';
+function runCapture(cmd: string, args: string[], timeoutMs = 5000): string | null {
+  try {
+    const r = spawnSync(cmd, args, {
+      encoding: 'utf8',
+      timeout: timeoutMs,
+      windowsHide: true,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    if (r.error || r.status !== 0) return null;
+    const out = (r.stdout ?? '').trim();
+    return out.length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Chromium-family executables, matched on the lower-cased basename with any
+ * `.exe` stripped.
+ *
+ * DELIBERATELY A PATTERN LIST, NOT A VENDOR SPECIAL-CASE. Anything built on
+ * Chromium exposes CDP and reports a `… Chrome/<version>` UA, so the gate's real
+ * question is "is this engine drivable", not "is this the browser I expected".
+ * Prefix-anchored so channel suffixes (`-stable`, `-beta`, ` Canary`) match; a
+ * browser missing from this list degrades to the audible substitution path, which
+ * is a bad message rather than a wrong measurement.
+ */
+const CHROMIUM_FAMILY_EXE: readonly RegExp[] = [
+  /^(google-)?chrome\b/,
+  /^chromium\b/,
+  /^(microsoft-)?edge\b/,
+  /^msedge\b/,
+  /^brave\b/,
+  /^vivaldi\b/,
+  /^opera\b/,
+  /^thorium\b/,
+  /^yandex\b/,
+  /^arc\b/,
+  /^comet\b/,
+];
+
+/**
+ * The same question asked of the OS's own identifier for the handler — a Windows
+ * ProgId (`ChromeHTML`, `BraveHTML`, `MSEdgeHTM`) or a macOS bundle id. Used when
+ * the executable basename is unhelpful (a wrapper, a launcher, a renamed binary).
+ */
+const CHROMIUM_FAMILY_ID: readonly RegExp[] = [
+  /^chromehtml/i,
+  /^chromiumhtm/i,
+  /^bravehtml/i,
+  /^msedgehtm/i,
+  /^vivaldihtm/i,
+  /^operastable/i,
+  /^yandexhtml/i,
+  /^com\.google\.chrome/i,
+  /^com\.brave\.browser/i,
+  /^com\.microsoft\.edgemac/i,
+  /^com\.vivaldi/i,
+  /^com\.operasoftware/i,
+  /^org\.chromium/i,
+];
+
+/**
+ * Engines Lighthouse CANNOT drive, listed so the refusal can name the engine
+ * rather than shrugging. This is not a blocklist — it is the difference between
+ * "your default is Firefox, and CDP does not speak Gecko" and "unrecognised".
+ */
+const NON_CDP_ENGINES: readonly { exe: RegExp; id: RegExp; engine: string }[] = [
+  {
+    exe: /^(firefox|librewolf|waterfox|floorp|zen|icecat|palemoon|basilisk)\b/,
+    id: /^(firefoxurl|org\.mozilla|io\.gitlab\.librewolf)/i,
+    engine: 'Gecko',
+  },
+  {
+    exe: /^(safari|epiphany|gnome-web|midori|surf)\b/,
+    id: /^(safarihtml|com\.apple\.safari)/i,
+    engine: 'WebKit',
+  },
+];
+
+type BrowserFamily = 'chromium' | 'non-cdp' | 'unknown';
+
+function browserBasename(exe: string): string {
+  return path.basename(exe).replace(/\.exe$/i, '').toLowerCase();
+}
+
+function classifyBrowser(exe: string | null, id: string | null): { family: BrowserFamily; engine: string | null } {
+  const base = exe === null ? '' : browserBasename(exe);
+  if (base.length > 0 && CHROMIUM_FAMILY_EXE.some((re) => re.test(base))) {
+    return { family: 'chromium', engine: 'Chromium' };
+  }
+  if (id !== null && CHROMIUM_FAMILY_ID.some((re) => re.test(id))) {
+    return { family: 'chromium', engine: 'Chromium' };
+  }
+  for (const known of NON_CDP_ENGINES) {
+    if ((base.length > 0 && known.exe.test(base)) || (id !== null && known.id.test(id))) {
+      return { family: 'non-cdp', engine: known.engine };
+    }
+  }
+  return { family: 'unknown', engine: null };
+}
+
+/** Expand `%VAR%` in a REG_EXPAND_SZ payload. An unexpanded path is not runnable. */
+function expandWinVars(value: string): string {
+  return value.replace(/%([^%]+)%/g, (whole, name: string) => process.env[name] ?? whole);
+}
+
+/**
+ * Pull the executable out of a Windows shell-open command line.
+ *
+ * The registry stores a COMMAND, not a path: this machine's is
+ * `"…\<browser>.exe" --single-argument %1`. The trailing argument varies by
+ * vendor (`"%1"`, `-- "%1"`, `--single-argument %1`), so the exe is taken from the
+ * FRONT rather than by subtracting known tails. Unquoted forms cut at the first
+ * `.exe` instead of the first space, because an unquoted registry command can
+ * still contain a path with spaces.
+ */
+function exeFromCommandLine(command: string): string | null {
+  const s = command.trim();
+  if (s.startsWith('"')) {
+    const end = s.indexOf('"', 1);
+    return end > 1 ? s.slice(1, end) : null;
+  }
+  const dotExe = /^(.*?\.exe)\b/i.exec(s);
+  if (dotExe) return dotExe[1];
+  const space = s.search(/\s/);
+  const first = space === -1 ? s : s.slice(0, space);
+  return first.length > 0 ? first : null;
+}
+
+/** Read one registry value with `reg.exe query`. */
+function winRegValue(key: string, valueName: string | null): string | null {
+  const out = runCapture('reg.exe', ['query', key, ...(valueName === null ? ['/ve'] : ['/v', valueName])]);
+  if (out === null) return null;
+  // Rows look like `    ProgId    REG_SZ    BraveHTML`; the payload may itself
+  // contain spaces and quotes, so anchor on the type token and take the rest.
+  const m = /\bREG_(?:SZ|EXPAND_SZ)\s+(.*)$/m.exec(out);
+  const value = m?.[1]?.trim();
+  return value !== undefined && value.length > 0 ? value : null;
+}
+
+interface DetectedDefault {
+  exe: string | null;
+  /** The OS's own handle for the default handler: ProgId, bundle id, or .desktop name. */
+  id: string | null;
+}
+
+/**
+ * Windows: the http UserChoice ProgId, resolved to its shell-open command.
+ * Per-user classes are consulted before HKCR, because HKCR is a merged view in
+ * which a machine-wide entry can mask the per-user one the UserChoice refers to.
+ */
+function detectWindowsDefault(): DetectedDefault {
+  const progId = winRegValue(
+    String.raw`HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice`,
+    'ProgId',
+  );
+  if (progId === null) return { exe: null, id: null };
+  for (const root of [String.raw`HKCU\Software\Classes`, 'HKCR']) {
+    const command = winRegValue(`${root}\\${progId}\\shell\\open\\command`, null);
+    if (command === null) continue;
+    const exe = exeFromCommandLine(expandWinVars(command));
+    if (exe !== null) return { exe, id: progId };
+  }
+  return { exe: null, id: progId };
+}
+
+/**
+ * macOS: LaunchServices records the chosen handler for the `http` scheme in the
+ * per-user secure plist. An ABSENT entry does not mean "no browser" — it means the
+ * default was never changed, which is Safari, and Safari is a WebKit browser CDP
+ * cannot drive. Returning it (rather than null) is what lets the caller say so by
+ * name instead of reporting a detection failure.
+ */
+function detectMacDefault(): DetectedDefault {
+  const plist = path.join(
+    os.homedir(),
+    'Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist',
+  );
+  let bundleId: string | null = null;
+  const json = runCapture('plutil', ['-convert', 'json', '-o', '-', plist]);
+  if (json !== null) {
+    try {
+      const parsed = JSON.parse(json) as {
+        LSHandlers?: { LSHandlerURLScheme?: unknown; LSHandlerRoleAll?: unknown }[];
+      };
+      for (const h of parsed.LSHandlers ?? []) {
+        if (h.LSHandlerURLScheme === 'http' && typeof h.LSHandlerRoleAll === 'string') {
+          bundleId = h.LSHandlerRoleAll;
+          break;
+        }
+      }
+    } catch {
+      // Unreadable plist — fall through to the never-changed default below.
+    }
+  }
+  if (bundleId === null) bundleId = 'com.apple.safari';
+
+  const appDir = runCapture('mdfind', [`kMDItemCFBundleIdentifier == '${bundleId}'`])?.split('\n')[0]?.trim();
+  if (appDir === undefined || appDir.length === 0) return { exe: null, id: bundleId };
+  const execName = runCapture('plutil', [
+    '-extract',
+    'CFBundleExecutable',
+    'raw',
+    path.join(appDir, 'Contents', 'Info.plist'),
+  ]);
+  if (execName === null) return { exe: null, id: bundleId };
+  return { exe: path.join(appDir, 'Contents', 'MacOS', execName), id: bundleId };
+}
+
+/** Strip freedesktop field codes (`%u`, `%F`, …) from a .desktop Exec line. */
+function execFromDesktopEntry(execLine: string): string | null {
+  const tokens = execLine
+    .replace(/%[fFuUdDnNickvm]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+  let i = 0;
+  // `Exec=env FOO=bar /usr/bin/browser` is legal; skip the wrapper and its assignments.
+  if (tokens[i] === 'env' || tokens[i] === '/usr/bin/env') {
+    i += 1;
+    while (tokens[i]?.includes('=')) i += 1;
+  }
+  const first = tokens[i];
+  if (first === undefined) return null;
+  if (path.isAbsolute(first)) return first;
+  const which = runCapture('which', [first])?.split('\n')[0]?.trim();
+  return which !== undefined && which.length > 0 ? which : first;
+}
+
+/** Linux: xdg-settings names a .desktop entry; its first Exec= line names the binary. */
+function detectLinuxDefault(): DetectedDefault {
+  const desktop = runCapture('xdg-settings', ['get', 'default-web-browser']);
+  if (desktop === null) return { exe: null, id: null };
+  const dataDirs = (process.env.XDG_DATA_DIRS ?? '/usr/local/share:/usr/share')
+    .split(':')
+    .filter((d) => d.length > 0);
+  const dirs = [
+    path.join(process.env.XDG_DATA_HOME ?? path.join(os.homedir(), '.local/share'), 'applications'),
+    ...dataDirs.map((d) => path.join(d, 'applications')),
+    '/var/lib/flatpak/exports/share/applications',
+  ];
+  for (const dir of dirs) {
+    const file = path.join(dir, desktop);
+    if (!existsSync(file)) continue;
+    // The first Exec= wins: the [Desktop Entry] group precedes any action groups.
+    const m = /^Exec\s*=\s*(.+)$/m.exec(readFileSync(file, 'utf8'));
+    if (!m) continue;
+    const exe = execFromDesktopEntry(m[1]);
+    if (exe !== null) return { exe, id: desktop };
+  }
+  return { exe: null, id: desktop };
+}
+
+function detectDefaultBrowser(): DetectedDefault {
+  if (isWindows) return detectWindowsDefault();
+  if (isMac) return detectMacDefault();
+  return detectLinuxDefault();
+}
+
+/**
+ * Last resort: is ANY Chromium-family browser installed where they normally live?
+ *
+ * Only reached when the OS default is unusable, and only ever with a note saying
+ * so — a substitution the operator is not told about is the failure this whole
+ * block is written to avoid.
+ */
+function scanForChromiumFamily(): string | null {
+  if (isWindows) {
+    const roots = [
+      process.env.ProgramFiles,
+      process.env['ProgramFiles(x86)'],
+      process.env.LOCALAPPDATA,
+    ].filter((r): r is string => typeof r === 'string' && r.length > 0);
+    const relative = [
+      String.raw`Google\Chrome\Application\chrome.exe`,
+      String.raw`Microsoft\Edge\Application\msedge.exe`,
+      String.raw`BraveSoftware\Brave-Browser\Application\brave.exe`,
+      String.raw`Vivaldi\Application\vivaldi.exe`,
+      String.raw`Chromium\Application\chrome.exe`,
+    ];
+    for (const root of roots) {
+      for (const rel of relative) {
+        const candidate = path.join(root, rel);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+    return null;
+  }
+  if (isMac) {
+    for (const app of [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+      '/Applications/Vivaldi.app/Contents/MacOS/Vivaldi',
+    ]) {
+      if (existsSync(app)) return app;
+    }
+    return null;
+  }
+  for (const name of [
+    'google-chrome',
+    'google-chrome-stable',
+    'chromium',
+    'chromium-browser',
+    'brave-browser',
+    'microsoft-edge',
+    'vivaldi-stable',
+    'opera',
+  ]) {
+    const found = runCapture('which', [name])?.split('\n')[0]?.trim();
+    if (found !== undefined && found.length > 0) return found;
+  }
+  return null;
+}
+
+interface BrowserResolution {
+  /** null means "nothing launchable was found" — the manual route is all that is left. */
+  exe: string | null;
+  source: 'A11Y_BROWSER' | 'os-default' | 'scan' | null;
+  /** Printed verbatim wherever the launch line is printed. NEVER suppressed. */
+  notes: readonly string[];
+}
+
+/**
+ * Resolve the browser to put in the launch line.
+ *
+ * A11Y_BROWSER is validated FAIL-FAST for the same reason A11Y_DEBUG_PORT is: a
+ * typo'd override that quietly fell through to detection would hand the operator a
+ * launch line for a DIFFERENT browser than the one they configured, and the run
+ * would look entirely successful. Silence is the defect; being wrong out loud is
+ * recoverable.
+ *
+ * A missing browser, by contrast, does NOT abort here. --self-launch needs no
+ * operator browser at all, so a module-scope exit would break a working mode over
+ * a prerequisite it does not have; the null is carried to the one place that
+ * actually needs a launch line and throws there, pointing at DEVTOOLS_FALLBACK.
+ */
+function resolveBrowser(): BrowserResolution {
+  const raw = process.env.A11Y_BROWSER;
+  if (raw != null) {
+    const v = raw.trim().replace(/^(['"])([\s\S]*)\1$/, '$2').trim();
+    if (v.length > 0) {
+      if (!existsSync(v)) {
+        return fatalConfig(
+          `A11Y_BROWSER is ${JSON.stringify(v)}, and no file exists at that path. It must be the FULL ` +
+            `path to a browser executable. Refusing to fall back to the detected default: you would get a ` +
+            `launch line for a different browser than the one you configured, and nothing would say so.`,
+        );
+      }
+      const { family, engine } = classifyBrowser(v, null);
+      const notes =
+        family === 'chromium'
+          ? [`Browser: A11Y_BROWSER override -> ${v}`]
+          : [
+              `Browser: A11Y_BROWSER override -> ${v}`,
+              `NOTE: ${path.basename(v)} is not recognised as Chromium-family` +
+                (engine === null ? '' : ` (it looks like a ${engine} browser)`) +
+                `. Honouring it anyway — an explicit override outranks detection — but if Lighthouse ` +
+                `cannot attach, this is the first thing to suspect.`,
+            ];
+      return { exe: v, source: 'A11Y_BROWSER', notes };
+    }
+  }
+
+  const notes: string[] = [];
+  const detected = detectDefaultBrowser();
+  const label = detected.exe ?? detected.id ?? '(not detected)';
+
+  if (detected.exe !== null && existsSync(detected.exe)) {
+    const { family, engine } = classifyBrowser(detected.exe, detected.id);
+    if (family === 'chromium') {
+      return {
+        exe: detected.exe,
+        source: 'os-default',
+        notes: [
+          `Browser: this device's DEFAULT browser${detected.id === null ? '' : ` (${detected.id})`} -> ${detected.exe}`,
+        ],
+      };
+    }
+    notes.push(
+      `This device's default browser is ${label}${engine === null ? '' : ` — a ${engine} browser`}, and ` +
+        `remote debugging CANNOT drive it: Lighthouse speaks the Chrome DevTools Protocol, which ` +
+        `${engine ?? 'that engine'} does not implement, and the OS "open this URL" handler cannot pass ` +
+        `--remote-debugging-port in any case. The audit therefore cannot run in your default browser.`,
+    );
+  } else {
+    notes.push(
+      `Could not resolve this device's default browser to an executable` +
+        `${detected.id === null ? '' : ` (the OS reports the handler as ${detected.id})`}. ` +
+        `Set A11Y_BROWSER to a full executable path to say which browser to use.`,
+    );
+  }
+
+  const scanned = scanForChromiumFamily();
+  if (scanned !== null) {
+    notes.push(
+      `SUBSTITUTING a Chromium-family browser found on this machine: ${scanned}. You are NOT auditing ` +
+        `your default browser — record that in any note you keep about this run.`,
+    );
+    return { exe: scanned, source: 'scan', notes };
+  }
+
+  notes.push(
+    `No Chromium-family browser was found in the usual install locations either, so there is nothing ` +
+      `this script can tell you to launch. Install one, or set A11Y_BROWSER, or take the manual route below.`,
+  );
+  return { exe: null, source: null, notes };
+}
+
+const RESOLVED_BROWSER = resolveBrowser();
 
 /**
  * The exact line to hand the operator when the port check fails. The path is
- * quoted because it contains spaces; PowerShell additionally needs the `&` call
+ * quoted because it may contain spaces; PowerShell additionally needs the `&` call
  * operator in front of a quoted executable path, or it evaluates the line as a
- * string rather than running it — so both forms are printed.
+ * string rather than running it — so both forms are printed. The headed warning
+ * rides along because `--headless=new` reports `HeadlessChrome/<v>`, which
+ * probeDebugPort's discriminator rejects by design.
  */
-const CHROME_LAUNCH_LINE =
-  `"${BROWSER_EXE}" --remote-debugging-port=${DEBUG_PORT} --user-data-dir="${DEBUG_PROFILE_DIR}"\n` +
-  `    (PowerShell: prefix the line with '& ' — a quoted path alone is a string, not a command.)`;
+const BROWSER_LAUNCH_LINE =
+  RESOLVED_BROWSER.exe === null
+    ? `(no launchable browser resolved — see the note above)`
+    : `"${RESOLVED_BROWSER.exe}" --remote-debugging-port=${DEBUG_PORT} --user-data-dir="${DEBUG_PROFILE_DIR}"\n` +
+      `    (PowerShell: prefix the line with '& ' — a quoted path alone is a string, not a command.)\n` +
+      `    Launch it HEADED — NOT --headless: headless Chromium reports HeadlessChrome/<v>, which the\n` +
+      `    browser check below rejects on purpose.`;
+
+/** The resolution story, indented to sit with the launch line. Always shown with it. */
+const BROWSER_RESOLUTION_BLOCK =
+  RESOLVED_BROWSER.notes.length === 0 ? '' : `${RESOLVED_BROWSER.notes.map((n) => `    ${n}`).join('\n\n')}\n\n`;
 
 /** The documented manual route. The DevTools panel never clears cookies, so it needs no storage flag. */
 const DEVTOOLS_FALLBACK =
@@ -632,6 +1091,14 @@ async function main(): Promise<void> {
     );
     if (process.env.CHROME_PATH) {
       pass(`CHROME_PATH is set — lighthouse will use ${process.env.CHROME_PATH}`);
+    } else if (RESOLVED_BROWSER.exe !== null) {
+      // Informational only: chrome-launcher does its own discovery and usually
+      // succeeds. When it does not, the browser THIS script resolved is the
+      // answer, and having to rediscover it by hand is a needless dead end.
+      console.log(
+        `  NOTE: CHROME_PATH is unset. If lighthouse cannot find a browser to launch, point it at the ` +
+          `one this script resolved: ${RESOLVED_BROWSER.exe}`,
+      );
     }
   } else {
     const port = await probeDebugPort();
@@ -639,7 +1106,8 @@ async function main(): Promise<void> {
       throw new Error(
         `${port.error}\n\n` +
           `Launch a debug browser and sign in through real OAuth in that window first:\n\n` +
-          `    ${CHROME_LAUNCH_LINE}\n\n` +
+          `${BROWSER_RESOLUTION_BLOCK}` +
+          `    ${BROWSER_LAUNCH_LINE}\n\n` +
           `For an ANONYMOUS surface you can skip the sign-in entirely with --self-launch.\n\n` +
           `${DEVTOOLS_FALLBACK}`,
       );
