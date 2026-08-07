@@ -27,16 +27,26 @@
  * and admits no comment, so this header is where the reason lives.
  *
  * ── PREREQUISITES ─────────────────────────────────────────────────────────────
- * 1. A signed-in debug Chrome, launched BEFORE this script:
+ * 1. A signed-in debug browser speaking CDP, launched BEFORE this script. This
+ *    script PRINTS the exact launch line for the current machine and port when
+ *    the port check fails — that printed line, not this comment, is the copy
+ *    source. On the machine this gate runs on it is Brave on port 8080:
  *
- *      chrome --remote-debugging-port=9222 --user-data-dir=/tmp/mm-a11y-profile
+ *      "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+ *        --remote-debugging-port=8080 --user-data-dir=<os tmpdir>\mm-a11y-profile
  *
+ *    BRAVE, NOT CHROME, and 8080, NOT 9222: this machine has no Chrome install,
+ *    and 9222 (Chrome's conventional debug port) is held by Lenovo Vantage's
+ *    embedded WebView — the incident that probeDebugPort() below exists to catch.
+ *    Brave is Chromium-based and reports a `Mozilla/5.0 … Chrome/<version>` UA
+ *    over CDP, so it satisfies that browser-vs-WebView discriminator unchanged.
  *    Then sign in through real OAuth in that window. Lighthouse attaches to it
- *    over --port=9222 and inherits the session.
+ *    over --port=<the resolved port> and inherits the session.
  * 2. Env: A11Y_BASE_URL (the deployed https origin; NEXT_PUBLIC_SITE_HOST is
- *    accepted as a fallback) and A11Y_CHAT_ID (a chat owned by the signed-in
+ *    accepted as a fallback), A11Y_CHAT_ID (a chat owned by the signed-in
  *    account with a COMPLETED research run, so the rail, sources and artifact
- *    card are all on screen).
+ *    card are all on screen), and optionally A11Y_DEBUG_PORT (the CDP port the
+ *    debug browser listens on; default 8080, validated — see resolveDebugPort).
  * 3. TWO ACCOUNTS, and they cannot be the same one. `/app` renders the paywall
  *    only at balance <= 0 (app/app/page.tsx:52-53), so a credited account audits
  *    a screen the reviewer will never see, and a zero-credit account owns no
@@ -85,6 +95,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -97,16 +108,100 @@ const OUT_DIR = path.join(ROOT, '.a11y');
  */
 const THRESHOLD = 95;
 
-/** The CDP port the operator's signed-in debug Chrome listens on. */
-const DEBUG_PORT = 9222;
+/**
+ * The default CDP port. NOT 9222: that is Chrome's conventional debug port, and
+ * on the machine this gate runs on it is permanently held by Lenovo Vantage's
+ * embedded WebView (see probeDebugPort). Overridable with A11Y_DEBUG_PORT so a
+ * machine with a different conflict is a one-env-var fix rather than an edit.
+ */
+const DEFAULT_DEBUG_PORT = 8080;
+
+/**
+ * Print a config diagnosis in this script's own voice and stop.
+ *
+ * Config is resolved at module scope, which is BEFORE main()'s catch exists, so
+ * a bare throw here would print a V8 code frame instead of the message. Exiting
+ * is safe at this point specifically: no socket, subprocess or CDP handle has
+ * been opened yet, so none of the libuv teardown hazards this file documents
+ * elsewhere apply.
+ */
+function fatalConfig(msg: string): never {
+  console.error(`A11Y AUDIT ERROR: ${msg}`);
+  process.exit(1);
+}
+
+/**
+ * The CDP port the operator's signed-in debug browser listens on.
+ *
+ * VALIDATED, NEVER SILENTLY DEFAULTED. A garbage value that fell back to 8080
+ * would make this gate probe a port the operator did not launch on, and the
+ * failure would surface as "nothing usable is listening on port 8080" — an
+ * ENVIRONMENT diagnosis for what is actually a CONFIG error, sending the
+ * operator to fix the browser instead of the typo. Same family as the mistakes
+ * this file's header is built around: a measurement tool's prerequisite check is
+ * part of the measurement.
+ *
+ * The trim/unquote is requireEnv's papercut handling — `vercel env pull` plus
+ * `node --env-file` leaves quotes and a CR behind on Windows.
+ */
+function resolveDebugPort(): number {
+  const raw = process.env.A11Y_DEBUG_PORT;
+  if (raw == null) return DEFAULT_DEBUG_PORT;
+  const v = raw.trim().replace(/^(['"])([\s\S]*)\1$/, '$2').trim();
+  if (v.length === 0) return DEFAULT_DEBUG_PORT;
+  if (!/^\d+$/.test(v)) {
+    return fatalConfig(
+      `A11Y_DEBUG_PORT is ${JSON.stringify(v)}, which is not a number. It must be a TCP port ` +
+        `between 1 and 65535 (default ${DEFAULT_DEBUG_PORT}). Refusing to fall back to the ` +
+        `default: probing a port you did not launch on would report a config typo as a missing browser.`,
+    );
+  }
+  const port = Number(v);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return fatalConfig(
+      `A11Y_DEBUG_PORT is ${JSON.stringify(v)}, which is not a valid TCP port. It must be between ` +
+        `1 and 65535 (default ${DEFAULT_DEBUG_PORT}). Refusing to fall back to the default: probing ` +
+        `a port you did not launch on would report a config error as a missing browser.`,
+    );
+  }
+  return port;
+}
+
+const DEBUG_PORT = resolveDebugPort();
 
 /** A single Lighthouse run is slow; a cold `npx` fetch on top of it is slower. */
 const LIGHTHOUSE_TIMEOUT_MS = 180_000;
 const NPX_PROBE_TIMEOUT_MS = 120_000;
 
-/** The exact line to hand the operator when the port check fails. */
+const isWindows = process.platform === 'win32';
+
+/**
+ * A throwaway CDP profile directory, resolved to a LITERAL absolute path rather
+ * than `/tmp/…` or `%TEMP%\…`. The launch line below is meant to be pasted, and
+ * the operator's shell may be PowerShell, which expands neither form. A launch
+ * line that needs shell expansion to be correct is not a launch line.
+ */
+const DEBUG_PROFILE_DIR = path.join(os.tmpdir(), 'mm-a11y-profile');
+
+/**
+ * Where the debug browser lives. BRAVE on Windows: this machine has no Chrome
+ * install. Brave is Chromium-based and reports a `Mozilla/5.0 … Chrome/<version>`
+ * User-Agent over CDP, so probeDebugPort's browser-vs-WebView discriminator
+ * accepts it with no change to that check.
+ */
+const BROWSER_EXE = isWindows
+  ? String.raw`C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe`
+  : 'brave-browser';
+
+/**
+ * The exact line to hand the operator when the port check fails. The path is
+ * quoted because it contains spaces; PowerShell additionally needs the `&` call
+ * operator in front of a quoted executable path, or it evaluates the line as a
+ * string rather than running it — so both forms are printed.
+ */
 const CHROME_LAUNCH_LINE =
-  `chrome --remote-debugging-port=${DEBUG_PORT} --user-data-dir=/tmp/mm-a11y-profile`;
+  `"${BROWSER_EXE}" --remote-debugging-port=${DEBUG_PORT} --user-data-dir="${DEBUG_PROFILE_DIR}"\n` +
+  `    (PowerShell: prefix the line with '& ' — a quoted path alone is a string, not a command.)`;
 
 /** The documented manual route. The DevTools panel never clears cookies, so it needs no storage flag. */
 const DEVTOOLS_FALLBACK =
@@ -205,7 +300,8 @@ function pass(msg: string): void {
 // spawns an external binary or writes an output artifact.
 // ---------------------------------------------------------------------------
 
-const isWindows = process.platform === 'win32';
+// `isWindows` is declared with the config constants above — the launch line the
+// operator is handed is platform-dependent too, and one platform test serves both.
 
 /**
  * Characters that CANNOT be made safe by quoting on cmd.exe. `%` still expands
@@ -264,9 +360,10 @@ function runNpx(args: string[], timeout: number): { code: number | null; out: st
  * Is an OPERATOR-LAUNCHED BROWSER listening on DEBUG_PORT — not merely something
  * that speaks CDP?
  *
- * "Something speaks CDP on 9222" is NOT the same claim, and the difference is not
- * hypothetical. On the machine this plan was executed on, port 9222 was already
- * held by **Lenovo Vantage's embedded Edge WebView** (`/json/version` reported
+ * "Something speaks CDP on the port" is NOT the same claim, and the difference is
+ * not hypothetical. On the machine this plan was executed on, port 9222 — then
+ * this script's hardcoded port, and the reason the default is now 8080 — was
+ * already held by **Lenovo Vantage's embedded Edge WebView** (`/json/version` reported
  * `"User-Agent": "LenovoVantage/3.0.0.191"`, and its only page target was the
  * Vantage widget). Lighthouse attached to it happily. A gate that accepts that
  * endpoint measures a vendor utility's WebView and reports the number as if it
@@ -541,7 +638,7 @@ async function main(): Promise<void> {
     if (port.error !== null) {
       throw new Error(
         `${port.error}\n\n` +
-          `Launch a debug Chrome and sign in through real OAuth in that window first:\n\n` +
+          `Launch a debug browser and sign in through real OAuth in that window first:\n\n` +
           `    ${CHROME_LAUNCH_LINE}\n\n` +
           `For an ANONYMOUS surface you can skip the sign-in entirely with --self-launch.\n\n` +
           `${DEVTOOLS_FALLBACK}`,
