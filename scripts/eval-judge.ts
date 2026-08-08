@@ -50,7 +50,7 @@ function optionalEnv(...names: string[]): string | undefined {
 const SUPABASE_URL = requireEnv("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL");
 const SERVICE_ROLE_KEY = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 /** Default = OPENROUTER_FREE_FALLBACK[0] in lib/registry.ts — keep in sync. */
-const JUDGE_MODEL = optionalEnv("EVAL_JUDGE_MODEL") ?? "inclusionai/ling-3.0-flash:free";
+const JUDGE_MODEL = optionalEnv("EVAL_JUDGE_MODEL") ?? "inclusionai/ling-3.0-tiny:free";
 const JUDGE_KEY = optionalEnv("EVAL_JUDGE_API_KEY", "OPENROUTER_API_KEY");
 const JUDGE_BASE_URL = optionalEnv("EVAL_JUDGE_BASE_URL") ?? "https://openrouter.ai/api/v1";
 

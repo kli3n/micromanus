@@ -83,7 +83,7 @@ function makeModel(
   const model = createOpenAiCompatModel({
     apiKey: "sk-test",
     baseURL: "https://openrouter.ai/api/v1",
-    modelId: "inclusionai/ling-3.0-flash:free",
+    modelId: "inclusionai/ling-3.0-tiny:free",
     ...(provider ? { provider } : {}),
     ...(contextTokens !== undefined ? { contextTokens } : {}),
     _clientFactory: () => client,
