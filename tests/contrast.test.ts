@@ -175,9 +175,32 @@ export const ADDITIONAL_PAIRS: readonly {
       "`code.rounded-[5px].bg-[var(--accent-soft)]` at app/page.tsx:127-136; the " +
       "0.01 gap from 4.43 is axe's rounding, not a formula disagreement, and both " +
       "land under 4.5. Remedies: --accent-hover (6.32) or --text-2 (4.98). " +
-      "Deliberately NOT added to FORBIDDEN_TEXT_PAIRS here: that set drives " +
+      "CLOSED as a text failure — the ratio above is still TRUE and must not " +
+      "change; what changed is that nothing applies this pair to TEXT any more. " +
+      "04-13 closed the landing half (app/page.tsx; that surface now scores 100). " +
+      "The components half was routed to 04-11 and NOT closed there — it was " +
+      "closed by quick task 260808-nec at three sites, all moved to " +
+      "--accent-hover (6.32): app/globals.css `.chat-markdown a.cite` (the D-67 " +
+      "citation chip's resting colour — an owner-approved amendment to that " +
+      "treatment, not a drive-by restyle), components/chat/SourcesCard.tsx (the " +
+      "[n] badge, whose failing fill arrives from `.src-row:target` after a " +
+      "citation click — the state the audited #src-2 URL was in), and " +
+      "components/ChatThread.tsx:368 (a sibling [n] badge at 10.5px, an " +
+      "owner-approved scope amendment: a genuine latent 1.4.3 failure that axe " +
+      "never reported only because that list did not render in the audited state). " +
+      "components/chat/ArtifactCard.tsx:274 still applies the pair, and is " +
+      "deliberately LEFT ALONE — it is a glyph-only 40x40 icon tile, so the 3:1 " +
+      "non-text bar (1.4.11) applies there and 4.43 PASSES. Recorded so a future " +
+      "reader does not 'fix' a non-violation. " +
+      "STILL deliberately NOT added to FORBIDDEN_TEXT_PAIRS: that set drives " +
       "scripts/audit-contrast.ts, and widening a gate is a fix, not a measurement. " +
-      "Routed to 04-13 (owns app/page.tsx) and 04-11 (the components).",
+      "260808-nec measured the widening two-sidedly with a throwaway probe copy " +
+      "of the gate, and the criterion (RED before the fix, GREEN after) was not " +
+      "met: 2 co-occurrences before (ChatThread.tsx:367, ArtifactCard.tsx:270), " +
+      "1 after (ArtifactCard.tsx:270). The one blocker is the icon tile that is " +
+      "not a violation, so widening would force a KNOWN_PAIRS entry whose " +
+      "required fixed_by field would name a fix that must never happen — a gate " +
+      "entry that lies. Revisit only if that tile ever gains a text child.",
   },
   {
     fg: TOKENS["--border"],
