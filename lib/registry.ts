@@ -167,9 +167,9 @@ export const MODEL_REGISTRY: ModelSpec[] = [
   //       (The three unverified guesses — DeepSeek V3.1, Qwen3 235B, Mistral Small
   //       3.2 — and the retired llama-3.3-70b-instruct:free are intentionally gone.)
   {
-    id: "inclusionai/ling-3.0-flash:free",
+    id: "inclusionai/ling-3.0-tiny:free",
     provider: "openrouter",
-    label: "Ling 3.0 Flash (free · OpenRouter)",
+    label: "Ling 3.0 Tiny (free · OpenRouter)",
     inputPer1M: 0,
     outputPer1M: 0,
     cacheReadPer1M: 0,
@@ -244,7 +244,7 @@ export const MODEL_REGISTRY: ModelSpec[] = [
  * contract; its order MUST equal the openrouter entry order in MODEL_REGISTRY.
  */
 export const OPENROUTER_FREE_FALLBACK: string[] = [
-  "inclusionai/ling-3.0-flash:free",
+  "inclusionai/ling-3.0-tiny:free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
   "poolside/laguna-s-2.1:free",

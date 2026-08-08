@@ -174,9 +174,9 @@ describe("OPENROUTER_FREE_FALLBACK (saturation priority)", () => {
     );
   });
 
-  it("has length 6 and starts with ling-3.0-flash:free", () => {
+  it("has length 6 and starts with ling-3.0-tiny:free", () => {
     expect(OPENROUTER_FREE_FALLBACK).toHaveLength(6);
-    expect(OPENROUTER_FREE_FALLBACK[0]).toBe("inclusionai/ling-3.0-flash:free");
+    expect(OPENROUTER_FREE_FALLBACK[0]).toBe("inclusionai/ling-3.0-tiny:free");
   });
 
   it("resolves every fallback id to a selectable $0 openrouter model", () => {
