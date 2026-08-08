@@ -1014,6 +1014,154 @@ describe("mapProviderError secret hygiene (EV-18 delta row)", () => {
   );
 });
 
+describe("429 shared-pool saturation vs per-key rate limiting (quick 260808-lvw)", () => {
+  // The three free-text values below are reproduced VERBATIM from the production
+  // payload (Vercel runtime log 2026-08-08, run cff5815e-964c-43ea-b2b1-e641f3e07232).
+  // They are provider-authored strings — the leak assertions use the real values
+  // precisely so a pass cannot be an artefact of a friendly placeholder.
+  const RAW_HINT =
+    "inclusionai/ling-3.0-tiny:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations";
+  const REMEDY_HINT =
+    "Retry shortly, add your own provider key (https://openrouter.ai/settings/integrations), or route to another provider with provider routing: https://openrouter.ai/docs/features/provider-routing";
+  const UPSTREAM_PROVIDER_NAME = "Novita";
+
+  /** The locked copy for the shared-pool branch — byte-exact, em dash included. */
+  const SHARED_POOL_COPY =
+    "This free model's shared capacity is used up right now — not your key. Pick another model below, or add your own provider key at OpenRouter.";
+  /** Copied verbatim out of lib/agent/loop.ts — the unchanged fall-through literal. */
+  const PER_KEY_COPY = "The provider is rate-limiting your key. Wait a moment and try again.";
+
+  type ProviderError = Error & { status?: number; error?: unknown };
+
+  /** The exact error object shape OpenRouter threw on the recorded run. */
+  function sharedPoolError(): ProviderError {
+    const err = new Error(RAW_HINT) as ProviderError;
+    err.status = 429;
+    err.error = {
+      message: "Provider returned error",
+      code: 429,
+      metadata: {
+        raw: RAW_HINT,
+        provider_name: UPSTREAM_PROVIDER_NAME,
+        is_byok: false,
+        limit_source: "upstream_provider_shared_pool",
+        remedy_hint: REMEDY_HINT,
+      },
+    };
+    return err;
+  }
+
+  /** A model whose first call throws `build()` before yielding anything. */
+  function throwingModel(build: () => ProviderError) {
+    return {
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async *run(): AsyncGenerator<ModelChunk> {
+        throw build();
+        // eslint-disable-next-line no-unreachable
+        yield {} as ModelChunk;
+      },
+    };
+  }
+
+  it("delivers the shared-pool copy byte-exact on the error frame", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+
+    await runAgentLoop(baseParams(s.send, db, throwingModel(sharedPoolError) as never, fakeTools()));
+
+    const errFrame = s.events.find((e) => e.event === "error");
+    expect(errFrame, "error frame emitted").toBeDefined();
+    expect((errFrame!.data as { message: string }).message).toBe(SHARED_POOL_COPY);
+  });
+
+  it("keeps the code 'rate_limited' on the shared-pool branch (guards against a tidy-up into a distinct code)", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+
+    await runAgentLoop(baseParams(s.send, db, throwingModel(sharedPoolError) as never, fakeTools()));
+
+    const errFrame = s.events.find((e) => e.event === "error");
+    expect(errFrame, "error frame emitted").toBeDefined();
+    expect((errFrame!.data as { code: string }).code).toBe("rate_limited");
+  });
+
+  it("still emits the saturation-fallback chooser with its priority-ordered list on the shared-pool branch", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+
+    await runAgentLoop({
+      ...baseParams(s.send, db, throwingModel(sharedPoolError) as never, fakeTools()),
+      modelId: OPENROUTER_FREE_FALLBACK[0],
+    });
+
+    const rl = s.events.find((e) => e.event === "rate_limited");
+    expect(rl, "rate_limited event emitted").toBeDefined();
+    const data = rl!.data as { saturatedModelId: string; fallback: string[] };
+    expect(data.saturatedModelId).toBe(OPENROUTER_FREE_FALLBACK[0]);
+    expect(data.fallback).toEqual(OPENROUTER_FREE_FALLBACK.slice(1));
+  });
+
+  it("leaks none of the provider-authored free-text fields into an SSE frame or the DB write", async () => {
+    const s = collectSend();
+    const db = fakeDb();
+
+    await runAgentLoop(baseParams(s.send, db, throwingModel(sharedPoolError) as never, fakeTools()));
+
+    const everything = JSON.stringify(s.events) + JSON.stringify(db.calls.updateMessageContent);
+    expect(everything, "raw hint must not leak").not.toContain(RAW_HINT);
+    expect(everything, "remedy hint must not leak").not.toContain(REMEDY_HINT);
+    expect(everything, "upstream provider name must not leak").not.toContain(UPSTREAM_PROVIDER_NAME);
+    // …and the branch did not pass by writing nothing at all.
+    expect(db.calls.updateMessageContent.at(-1)?.content).toBe(SHARED_POOL_COPY);
+  });
+
+  const fallThroughShapes: [string, () => ProviderError][] = [
+    [
+      "a bare 429 carrying no error body at all",
+      () => {
+        const err = new Error(RAW_HINT) as ProviderError;
+        err.status = 429;
+        return err;
+      },
+    ],
+    [
+      "a 429 reporting a different limit source with the by-your-own-key flag set",
+      () => {
+        const err = new Error(RAW_HINT) as ProviderError;
+        err.status = 429;
+        err.error = {
+          message: "Provider returned error",
+          code: 429,
+          metadata: {
+            raw: RAW_HINT,
+            provider_name: UPSTREAM_PROVIDER_NAME,
+            is_byok: true,
+            limit_source: "account_rate_limit",
+            remedy_hint: REMEDY_HINT,
+          },
+        };
+        return err;
+      },
+    ],
+  ];
+
+  it.each(fallThroughShapes)(
+    "falls through byte-unchanged to the per-key copy for %s",
+    async (_label, build) => {
+      const s = collectSend();
+      const db = fakeDb();
+
+      await runAgentLoop(baseParams(s.send, db, throwingModel(build) as never, fakeTools()));
+
+      const errFrame = s.events.find((e) => e.event === "error");
+      expect(errFrame, "error frame emitted").toBeDefined();
+      const data = errFrame!.data as { code: string; message: string };
+      expect(data.message).toBe(PER_KEY_COPY);
+      expect(data.code).toBe("rate_limited");
+    },
+  );
+});
+
 describe("WR-04: the terminal write always lands and the loop never rejects out of its catch", () => {
   // A transient DB failure is MOST likely exactly on a failure path, and every
   // client stops waiting only on a non-'running' runs.status: if an earlier
