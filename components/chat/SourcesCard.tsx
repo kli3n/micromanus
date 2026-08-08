@@ -194,12 +194,18 @@ function SourceRowBody({
 }) {
   return (
     <>
-      {/* Contrast (04-11): the [n] badge drops its pale accent wash — --accent
-          text on that fill measures 4.43:1 (the fourth measured AA pair, under
-          the 4.5:1 bar); on the card surface it reads at 5.18:1, and the
-          accent-line border keeps the badge's outline. */}
+      {/* Contrast (04-11 + 260808-nec): the [n] badge drops its pale accent wash
+          — --accent text on that fill measures 4.43:1 (the fourth measured AA
+          pair, under the 4.5:1 bar) — and the accent-line border keeps the
+          badge's outline. Dropping the wash was only half the story: the wash
+          comes BACK underneath this badge in the `.src-row:target` state
+          (app/globals.css), which a citation click reaches, and that is the
+          state live axe measured at 4.42. So the badge text now sits on
+          --accent-hover, which clears AA in BOTH states — 6.32:1 on the
+          --accent-soft :target fill, and darker still on the card surface
+          (--accent read 5.18:1 there). */}
       <span
-        className="min-w-[30px] flex-none rounded-[var(--radius-sm)] border border-[var(--accent-line)] px-[5px] py-[1px] text-center text-[11px] text-[var(--accent)]"
+        className="min-w-[30px] flex-none rounded-[var(--radius-sm)] border border-[var(--accent-line)] px-[5px] py-[1px] text-center text-[11px] text-[var(--accent-hover)]"
         style={{ fontFamily: "var(--mono)" }}
       >
         [{s.n}]

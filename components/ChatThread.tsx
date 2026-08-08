@@ -365,7 +365,7 @@ function ToolRowPanel({ entries }: { entries: ExpandableEntry[] }) {
           )}
           {typeof en.n === "number" && (
             <span
-              className="flex-none rounded-[4px] border border-[var(--accent-line)] bg-[var(--accent-soft)] px-[4px] text-[10.5px] text-[var(--accent)]"
+              className="flex-none rounded-[4px] border border-[var(--accent-line)] bg-[var(--accent-soft)] px-[4px] text-[10.5px] text-[var(--accent-hover)]"
               style={{ fontFamily: "var(--mono)" }}
             >
               [{en.n}]

@@ -297,7 +297,7 @@ body {
    upgrade. Do not remove it: the border/padding rungs cannot replace it. */
 .chat-markdown a.cite {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-hover);
   border: 1px solid var(--accent-line);
   border-radius: 4px;
   padding: 0 4px;
@@ -307,6 +307,11 @@ body {
   vertical-align: super;
   text-decoration: none;
 }
+/* The `color` below is now redundant with the resting state (260808-nec moved
+   the resting colour to --accent-hover for AA). It is DELIBERATELY retained as
+   an explicit restatement: the hover affordance is carried by the --accent-line
+   fill, and dropping the declaration would make the hover colour depend on
+   inheritance for no gain. */
 .chat-markdown a.cite:hover {
   background: var(--accent-line);
   color: var(--accent-hover);

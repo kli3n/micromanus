@@ -397,7 +397,7 @@ export async function AppShell({
               create_pdf_report tool and the per-message Export button. */}
         </header>
 
-        <div
+        <main
           className="grid flex-1 place-items-center p-10"
           style={{
             background:
@@ -405,7 +405,7 @@ export async function AppShell({
           }}
         >
           {children}
-        </div>
+        </main>
       </NavDrawerProvider>
     </>
   );
