@@ -336,11 +336,40 @@ function mapProviderError(err: unknown): { code: string; message: string } {
       code: "auth",
       message: "Your API key was rejected by the provider. Check the key in Settings.",
     };
-  if (status === 429)
+  if (status === 429) {
+    // Shared free-tier saturation is NOT the user's key being throttled, and the
+    // fall-through copy below is factually WRONG for it: on the recorded
+    // production failure five earlier calls had already billed successfully, so
+    // the key was never the limit — the routed-through shared upstream credentials
+    // were. Only this narrow, enumerated case gets different copy.
+    //
+    // The code stays rate_limited ON PURPOSE — do not "tidy" this into a distinct
+    // code. The saturation-fallback chooser on the failure path below gates on
+    // `mapped.code`, and the client's matching case renders from the same string;
+    // switching models is the PRIMARY remedy for this failure, so a new code would
+    // silently disable the chooser in exactly the case it is most useful. ONLY the
+    // message varies.
+    //
+    // Exactly ONE enumerated field is read, to CHOOSE a fixed local literal. The
+    // free-text hint fields on the same object are provider-authored and are never
+    // read, logged, or echoed — the same read-to-classify-never-to-echo shape as
+    // the 400 branch just below. Optional-chained at every hop so a missing,
+    // null, or wrong-typed body yields undefined and falls through (a throw here
+    // would escape the loop's catch and wedge the run at status='running').
+    const limitSource: unknown = (
+      err as { error?: { metadata?: { limit_source?: unknown } } | null } | null
+    )?.error?.metadata?.limit_source;
+    if (limitSource === "upstream_provider_shared_pool")
+      return {
+        code: "rate_limited",
+        message:
+          "This free model's shared capacity is used up right now — not your key. Pick another model below, or add your own provider key at OpenRouter.",
+      };
     return {
       code: "rate_limited",
       message: "The provider is rate-limiting your key. Wait a moment and try again.",
     };
+  }
   // Context-window overflow surfaces as a provider 400 on some paths (instead of
   // a stop_reason) — route it to the same actionable copy (EV-11). The message is
   // only pattern-TESTED here; it is never included in the output.
